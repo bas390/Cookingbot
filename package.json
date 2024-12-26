@@ -1,7 +1,7 @@
 {
   "name": "cooking-chatbot",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -9,13 +9,30 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~52.0.20",
-    "expo-status-bar": "~2.0.0",
+    "@expo/metro-runtime": "~4.0.0",
+    "@firebase/firestore": "^4.7.5",
+    "@firebase/storage": "^0.13.4",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-navigation/native": "^6.1.6",
+    "@react-navigation/stack": "^6.3.16",
+    "expo": "^52.0.0",
+    "expo-dev-client": "^5.0.7",
+    "expo-image-picker": "~16.0.3",
+    "expo-notifications": "~0.29.11",
+    "firebase": "^11.1.0",
     "react": "18.3.1",
-    "react-native": "0.76.5"
+    "react-dom": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-gesture-handler": "~2.20.2",
+    "react-native-kommunicate-chat": "^2.3.8",
+    "react-native-reanimated": "~3.16.1",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.1.0",
+    "react-native-vector-icons": "^9.2.0",
+    "react-native-web": "~0.19.13"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0"
+    "@babel/core": "^7.25.2"
   },
   "private": true
 }
