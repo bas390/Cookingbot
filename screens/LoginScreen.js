@@ -8,23 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore'
-// Firebase Configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyAmGQuyHNEkXUlS3QC-SoB6qEoKXodpFE",
-  authDomain: "aicook-1042e.firebaseapp.com",
-  projectId: "aicook-1042e",
-  storageBucket: "aicook-1042e.appspot.com",
-  messagingSenderId: "35903625995",
-  appId: "1:35903625995:web:38d4622c0f6a3a87b95ef6",
-  measurementId: "G-PQW99GKV5V"
-};
-
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+import { auth } from '../firebase';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');

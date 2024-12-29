@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { collection, orderBy, query, onSnapshot, addDoc, getDocs, deleteDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 // BotTyping Component
 const BotTyping = ({ botAvatar }) => {
@@ -48,15 +50,21 @@ export default function ChatbotScreen() {
   const botAvatar = require('../assets/bot-icon.png');
 
   useEffect(() => {
-    const loadMessages = async () => {
-      try {
-        const savedMessages = await AsyncStorage.getItem('messages');
-        if (savedMessages) setMessages(JSON.parse(savedMessages));
-      } catch (error) {
-        console.error('Error loading messages:', error);
-      }
-    };
-    loadMessages();
+    const messagesRef = collection(db, 'messages');
+    const q = query(messagesRef, orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const messageList = [];
+      snapshot.forEach(doc => {
+        messageList.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+      setMessages(messageList);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -70,6 +78,22 @@ export default function ChatbotScreen() {
     saveMessages();
   }, [messages]);
 
+  const getBotResponse = (userMessage) => {
+    const message = userMessage.toLowerCase();
+    
+    if (message.includes('สวัสดี') || message.includes('หวัดดี')) {
+      return 'สวัสดีค่ะ มีอะไรให้ช่วยไหมคะ?';
+    }
+    if (message.includes('ขอเมนู') || message.includes('อยากทำอาหาร')) {
+      return 'ต้องการเมนูประเภทไหนคะ? เช่น อาหารไทย อาหารจานเดียว หรือของหวาน?';
+    }
+    if (message.includes('ขอบคุณ')) {
+      return 'ยินดีค่ะ หากมีอะไรให้ช่วยเพิ่มเติม บอกได้เลยนะคะ';
+    }
+    
+    return 'ขออภัยค่ะ ไม่เข้าใจคำถาม กรุณาถามใหม่อีกครั้ง';
+  };
+
   const handleSend = async () => {
     if (!input.trim()) {
       Alert.alert('ข้อผิดพลาด', 'กรุณาใส่ข้อความก่อนส่ง');
@@ -77,7 +101,15 @@ export default function ChatbotScreen() {
     }
 
     const timestamp = new Date().toLocaleTimeString();
-    addMessage('user', input, timestamp);
+    
+    const messagesRef = collection(db, 'messages');
+    await addDoc(messagesRef, {
+      text: input,
+      sender: 'user',
+      timestamp: timestamp,
+      createdAt: new Date().getTime(),
+    });
+
     setInput('');
     setIsTyping(true);
 
@@ -94,12 +126,20 @@ export default function ChatbotScreen() {
       console.warn('Notification permissions are not granted.');
     }
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const botTimestamp = new Date().toLocaleTimeString();
-      addMessage('bot', 'นี่คือข้อความตอบกลับจากบอท!', botTimestamp);
+      const botResponse = getBotResponse(input);
+      
+      await addDoc(messagesRef, {
+        text: botResponse,
+        sender: 'bot',
+        timestamp: botTimestamp,
+        createdAt: new Date().getTime(),
+      });
+      
       setIsTyping(false);
       startAnimation();
-    }, 3000);
+    }, 1500);
   };
 
   const addMessage = (sender, text, timestamp) => {
@@ -124,7 +164,17 @@ export default function ChatbotScreen() {
   const clearMessages = () => {
     Alert.alert('ยืนยันการลบ', 'คุณต้องการลบข้อความทั้งหมดหรือไม่?', [
       { text: 'ยกเลิก', style: 'cancel' },
-      { text: 'ลบ', onPress: () => setMessages([]), style: 'destructive' },
+      { 
+        text: 'ลบ', 
+        onPress: async () => {
+          const messagesRef = collection(db, 'messages');
+          const snapshot = await getDocs(messagesRef);
+          snapshot.forEach(async (doc) => {
+            await deleteDoc(doc.ref);
+          });
+        }, 
+        style: 'destructive' 
+      },
     ]);
   };
 
