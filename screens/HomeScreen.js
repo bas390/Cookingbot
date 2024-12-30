@@ -17,9 +17,11 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, database, dbRef } from '../firebase';
 import { ref, query, orderByChild, onValue } from 'firebase/database';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc } from 'firebase/firestore';
+import { useTheme } from '../context/ThemeContext';
 
 export default function HomeScreen({ navigation }) {
+  const { isDarkMode, toggleTheme } = useTheme();
   const [chats, setChats] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [newChatName, setNewChatName] = useState('');
@@ -102,6 +104,7 @@ export default function HomeScreen({ navigation }) {
 
   const handleChatPress = (chatId) => {
     navigation.navigate('Chatbot', { chatId });
+  
   };
 
   const renderChatItem = ({ item }) => {
@@ -162,14 +165,202 @@ export default function HomeScreen({ navigation }) {
     return () => unsubscribe();
   }, []);
 
+  const styles = StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+      paddingTop: Platform.OS === 'android' 
+        ? StatusBar.currentHeight + 20 
+        : 44,
+    },
+    container: {
+      flex: 1,
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 16,
+      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
+      borderBottomWidth: 1,
+      borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    headerTitle: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    headerButtons: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+    },
+    logoutButton: {
+      padding: 8,
+    },
+    emptyState: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingBottom: 100,
+    },
+    emptyText: {
+      fontSize: 18,
+      color: '#888',
+      marginTop: 16,
+    },
+    emptySubtext: {
+      fontSize: 14,
+      color: '#666',
+      marginTop: 8,
+    },
+    chatList: {
+      flexGrow: 1,
+    },
+    addButton: {
+      position: 'absolute',
+      bottom: 24,
+      right: 16,
+      backgroundColor: '#00B900',
+      borderRadius: 28,
+      width: 56,
+      height: 56,
+      justifyContent: 'center',
+      alignItems: 'center',
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
+    chatItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 16,
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#F5F5F5',
+      borderBottomWidth: 0.5,
+      borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
+    },
+    chatAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#F2F2F2',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+    },
+    chatContent: {
+      flex: 1,
+      marginRight: 8,
+    },
+    chatTitle: {
+      fontSize: 16,
+      fontWeight: '500',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginBottom: 4,
+    },
+    chatPreview: {
+      fontSize: 14,
+      color: isDarkMode ? '#999999' : '#666666',
+    },
+    chatTime: {
+      fontSize: 12,
+      color: '#8E8E93',
+      marginLeft: 4,
+    },
+    swipeActions: {
+      backgroundColor: '#FF3B30',
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: 80,
+    },
+    deleteButton: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: '100%',
+    },
+    deleteText: {
+      color: '#fff',
+      fontSize: 12,
+      marginTop: 4,
+    },
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+      width: '90%',
+      backgroundColor: '#FFF',
+      borderRadius: 12,
+      padding: 20,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginBottom: 16,
+      textAlign: 'center',
+    },
+    input: {
+      width: '100%',
+      padding: 12,
+      borderWidth: 1,
+      borderColor: '#E5E5E5',
+      borderRadius: 8,
+      marginBottom: 16,
+      fontSize: 16,
+    },
+    modalButtons: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    modalButton: {
+      flex: 1,
+      backgroundColor: '#00B900',
+      padding: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    cancelButton: {
+      backgroundColor: '#666',
+    },
+    modalButtonText: {
+      color: '#FFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Chat History</Text>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <MaterialIcons name="logout" size={24} color="#666" />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>แชท</Text>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity onPress={toggleTheme}>
+              <MaterialIcons 
+                name={isDarkMode ? "light-mode" : "dark-mode"} 
+                size={24} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.logoutButton} 
+              onPress={handleLogout}
+            >
+              <MaterialIcons 
+                name="logout" 
+                size={24} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {chats.length === 0 ? (
@@ -232,170 +423,3 @@ export default function HomeScreen({ navigation }) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' 
-      ? StatusBar.currentHeight + 20 
-      : 44,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: Platform.OS === 'ios' ? 12 : 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  logoutButton: {
-    padding: 8,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 100,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#666',
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-  },
-  chatList: {
-    flexGrow: 1,
-  },
-  addButton: {
-    position: 'absolute',
-    bottom: 24,
-    right: 16,
-    backgroundColor: '#00B900',
-    borderRadius: 28,
-    width: 56,
-    height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#E5E5E5',
-  },
-  chatAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F2F2F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  chatContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  chatTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000',
-    marginBottom: 4,
-  },
-  chatPreview: {
-    fontSize: 14,
-    color: '#8E8E93',
-  },
-  chatTime: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginLeft: 4,
-  },
-  swipeActions: {
-    backgroundColor: '#FF3B30',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-  },
-  deleteButton: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  deleteText: {
-    color: '#fff',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '90%',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  input: {
-    width: '100%',
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 8,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    backgroundColor: '#00B900',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#666',
-  },
-  modalButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});

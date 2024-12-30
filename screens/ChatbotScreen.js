@@ -14,18 +14,24 @@ import {
   ScrollView,
   SafeAreaView,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs, doc, orderBy, startAfter, limit } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { OPENAI_API_KEY } from '@env';
 import axios from 'axios';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute } from '@react-navigation/native';
+import { SafeAreaView as RNSSafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { useTheme } from '../context/ThemeContext';
 
 // BotTyping Component
-const BotTyping = ({ botAvatar }) => {
+const BotTyping = () => {
   const [dotIndex, setDotIndex] = useState(0);
+  const { isDarkMode } = useTheme();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -35,17 +41,127 @@ const BotTyping = ({ botAvatar }) => {
     return () => clearInterval(interval);
   }, []);
 
+  const typingStyles = StyleSheet.create({
+    messageRow: {
+      flexDirection: 'row',
+      marginVertical: 4,
+      paddingHorizontal: 16,
+    },
+    botRow: {
+      justifyContent: 'flex-start',
+    },
+    avatarContainer: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      marginRight: 8,
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#E5E5E5',
+    },
+    chefImage: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+    },
+    statusDot: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: '#00B900',
+      borderWidth: 2,
+      borderColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    messageBubble: {
+      maxWidth: '80%',
+      padding: 12,
+      borderRadius: 16,
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      borderTopLeftRadius: 4,
+    },
+    botText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 16,
+    }
+  });
+
   const dots = '.'.repeat(dotIndex);
 
   return (
-    <View style={[styles.messageRow, styles.botRow]}>
-      <Image source={botAvatar} style={styles.botAvatar} />
-      <View style={styles.typingBubble}>
-        <Text style={styles.typingText}>บอทกำลังพิมพ์{dots}</Text>
+    <View style={[typingStyles.messageRow, typingStyles.botRow]}>
+      <View style={typingStyles.avatarContainer}>
+        <Image 
+          source={require('../assets/icon.png')} 
+          style={typingStyles.chefImage}
+          resizeMode="contain"
+        />
+        <View style={typingStyles.statusDot} />
+      </View>
+      <View style={typingStyles.messageBubble}>
+        <Text style={typingStyles.botText}>บอทกำลังพิมพ์{dots}</Text>
       </View>
     </View>
   );
 };
+
+// ย้าย baseStyles มาไว้นอก component สำหรับ styles ที่ไม่เปลี่ยนแปลงตาม theme
+const baseStyles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+  messageList: {
+    flex: 1,
+  },
+  headerButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  sendButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  messageRow: {
+    flexDirection: 'row',
+    marginVertical: 4,
+    paddingHorizontal: 16,
+  },
+  userRow: {
+    justifyContent: 'flex-end',
+  },
+  botRow: {
+    justifyContent: 'flex-start',
+  },
+  userText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
+  timestamp: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  userTimestamp: {
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'right',
+  },
+  botTimestamp: {
+    color: '#999999',
+    textAlign: 'left',
+  },
+});
 
 export default function ChatbotScreen({ navigation }) {
   const route = useRoute();
@@ -55,8 +171,155 @@ export default function ChatbotScreen({ navigation }) {
   const [isTyping, setIsTyping] = useState(false);
   const animationValue = useState(new Animated.Value(0))[0];
   const flatListRef = useRef(null);
-  const botAvatar = require('../assets/bot-icon.png');
   const [useGPT, setUseGPT] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  // สร้าง dynamic styles ภายใน component
+  const styles = StyleSheet.create({
+    ...baseStyles, // นำ baseStyles มารวม
+    safeArea: {
+      ...baseStyles.safeArea,
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    container: {
+      ...baseStyles.container,
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 16,
+      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
+      borderBottomWidth: 1,
+      borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    backButton: {
+      padding: 8,
+      marginRight: 8,
+    },
+    headerTitle: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    headerButtons: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+    },
+    headerButton: {
+      padding: 8,
+      borderRadius: 8,
+    },
+    headerButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    headerThemeButton: {
+      padding: 8,
+    },
+    inputContainer: {
+      borderTopWidth: 1,
+      borderTopColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+      width: '100%',
+    },
+    inputWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    input: {
+      flex: 1,
+      height: 40,
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      fontSize: 16,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginRight: 8,
+    },
+    sendButton: {
+      width: 40,
+      height: 40,
+      backgroundColor: '#00B900',
+      borderRadius: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    sendButtonDisabled: {
+      backgroundColor: '#666666',
+    },
+    messageBubble: {
+      maxWidth: '80%',
+      padding: 12,
+      borderRadius: 16,
+    },
+    userBubble: {
+      backgroundColor: '#00B900',
+      borderTopRightRadius: 4,
+    },
+    botBubble: {
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      borderTopLeftRadius: 4,
+    },
+    botText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 16,
+    },
+    avatarContainer: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      marginRight: 8,
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#E5E5E5',
+    },
+    chefImage: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+    },
+    statusDot: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: '#00B900',
+      borderWidth: 2,
+      borderColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    typingContainer: {
+      position: 'absolute',
+      bottom: 60,
+      left: 0,
+      right: 0,
+      paddingHorizontal: 16,
+    },
+    typingIndicator: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    typingText: {
+      color: isDarkMode ? '#999999' : '#666666',
+      fontSize: 14,
+    },
+  });
 
   // ดึงข้อความเมื่อ component โหลด
   useEffect(() => {
@@ -267,19 +530,28 @@ export default function ChatbotScreen({ navigation }) {
       { 
         text: 'ลบ', 
         onPress: async () => {
-          const currentUser = auth.currentUser;
-          if (!currentUser) return;
+          try {
+            const currentUser = auth.currentUser;
+            if (!currentUser) return;
 
-          const messagesRef = collection(db, 'chats');
-          const q = query(
-            messagesRef,
-            where('userId', '==', currentUser.uid)
-          );
-          const snapshot = await getDocs(q);
-          
-          snapshot.forEach(async (doc) => {
-            await deleteDoc(doc.ref);
-          });
+            const messagesRef = collection(db, 'chats');
+            const q = query(
+              messagesRef,
+              where('userId', '==', currentUser.uid)
+            );
+            const snapshot = await getDocs(q);
+            
+            // ลบข้อความทั้งหมดใน Firestore
+            const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+            
+            // อัพเดท state ให้เป็นอาเรย์ว่าง
+            setMessages([]); // ตรวจสอบว่ามีการเรียกใช้ setMessages([]) หลังจากลบเสร็จแล้ว
+
+          } catch (error) {
+            console.error('Error clearing messages:', error);
+            Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบข้อความได้ กรุณาลองใหม่อีกครั้ง');
+          }
         }, 
         style: 'destructive' 
       },
@@ -305,13 +577,14 @@ export default function ChatbotScreen({ navigation }) {
       ]}
     >
       {item.sender === 'bot' && (
-       <View style={styles.avatarContainer}>
-       <Image 
-         source={require('../assets/icon.png')} 
-         style={styles.chefImage}
-       />
-       <View style={styles.statusDot} />
-     </View>
+        <View style={styles.avatarContainer}>
+          <Image 
+            source={require('../assets/icon.png')} 
+            style={styles.chefImage}
+            resizeMode="contain"
+          />
+          <View style={styles.statusDot} />
+        </View>
       )}
       <View
         style={[
@@ -342,372 +615,176 @@ export default function ChatbotScreen({ navigation }) {
     </TouchableOpacity>
   );
 
+  // เพิ่มฟังก์ชันสำหรับจัดการการพิมพ์
+  const handleInputChange = (text) => {
+    setInput(text);
+    // ถ้าต้องการแสดงสถานะ "กำลังพิมพ์..." ให้กับผู้ใช้อื่น
+    // updateTypingStatus(true);
+  };
+
+  // เพิ่มฟังก์ชันสำหรับจัดการเมื่อกด Enter
+  const handleKeyPress = ({ nativeEvent }) => {
+    if (nativeEvent.key === 'Enter' && !nativeEvent.shiftKey) {
+      handleSend();
+    }
+  };
+
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMore) return;
+    
+    try {
+      setIsLoadingMore(true);
+      const lastMessage = messages[messages.length - 1];
+      const messagesRef = collection(db, 'chats');
+      const q = query(
+        messagesRef,
+        where('userId', '==', auth.currentUser.uid),
+        orderBy('createdAt', 'desc'),
+        startAfter(lastMessage.createdAt),
+        limit(20)
+      );
+      
+      const snapshot = await getDocs(q);
+      const newMessages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      if (newMessages.length < 20) {
+        setHasMore(false);
+      }
+      
+      setMessages(prev => [...prev, ...newMessages]);
+    } catch (error) {
+      console.error('Error loading more messages:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleError = (error, customMessage = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง') => {
+    console.error('Error:', error);
+    Alert.alert('ข้อผิดพลาด', customMessage);
+  };
+
+  // ฟังก์ชันตรวจสอบการเชื่อมต่อ
+  const checkConnection = async () => {
+    try {
+      const response = await fetch('https://www.google.com');
+      return response.status === 200;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      // ทำความสะอาดเมื่อออกจากหน้าจอ
+      setMessages([]);
+      setInput('');
+      setIsTyping(false);
+    };
+  }, []);
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.safeArea}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-    >
+    <RNSSafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <MaterialIcons name="arrow-back" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {chatTitle}
-          </Text>
-          <View style={styles.headerButtonContainer}>
+          <View style={styles.headerLeft}>
             <TouchableOpacity 
-              style={styles.headerButton}
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <MaterialIcons 
+                name="arrow-back" 
+                size={24} 
+                color={isDarkMode ? "#fff" : "#000"} 
+              />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>
+              แชท
+            </Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={styles.headerThemeButton}
+              onPress={toggleTheme}
+            >
+              <MaterialIcons 
+                name={isDarkMode ? "light-mode" : "dark-mode"} 
+                size={24} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.headerButton, { backgroundColor: '#00B900' }]}
               onPress={clearMessages}
             >
-              <Text style={styles.headerButtonText}>ล้างข้อความ</Text>
+              <MaterialIcons 
+                name="delete-sweep" 
+                size={20} 
+                color="#FFFFFF" 
+              />
             </TouchableOpacity>
             <TouchableOpacity 
-              style={styles.headerButton}
+              style={[styles.headerButton, { backgroundColor: useGPT ? '#00B900' : '#666666' }]}
               onPress={() => setUseGPT(!useGPT)}
             >
-              <Text style={styles.headerButtonText}>{useGPT ? 'GPT' : 'Simple'}</Text>
+              <Text style={styles.headerButtonText}>
+                {useGPT ? 'GPT' : 'Simple'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
-        
-        <View style={styles.messageList}>
-          <FlatList
-            data={messages}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.id}
-            ref={flatListRef}
-            inverted
-            contentContainerStyle={styles.chatContent}
-          />
-        </View>
 
-        {isTyping && (
-          <View style={styles.typingContainer}>
-            <Image source={botAvatar} style={styles.typingAvatar} />
-            <View style={styles.typingIndicator}>
-              <Text style={styles.typingText}>กำลังพิมพ์...</Text>
-            </View>
+        <FlatList
+          data={messages}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          ref={flatListRef}
+          inverted
+          contentContainerStyle={styles.chatContent}
+          style={styles.messageList}
+          onEndReached={loadMoreMessages}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoadingMore}
+              onRefresh={loadMoreMessages}
+              tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
+            />
+          }
+        />
+
+        {isTyping && <BotTyping />}
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+          style={styles.inputContainer}
+        >
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.input}
+              value={input}
+              onChangeText={handleInputChange}
+              placeholder="พิมพ์ข้อความ..."
+              placeholderTextColor="#999999"
+              multiline={false}
+              maxHeight={50}
+              onKeyPress={handleKeyPress}
+            />
+            <TouchableOpacity 
+              style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
+              onPress={handleSend}
+              disabled={!input.trim()}
+            >
+              <Text style={styles.sendButtonText}>ส่ง</Text>
+            </TouchableOpacity>
           </View>
-        )}
-
-        <View style={styles.inputSection}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="พิมพ์ข้อความ..."
-            placeholderTextColor="#999999"
-            multiline={false}
-            maxHeight={50}
-          />
-          <TouchableOpacity 
-            style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
-            onPress={handleSend}
-            disabled={!input.trim()}
-          >
-            <Text style={styles.sendButtonText}>ส่ง</Text>
-          </TouchableOpacity>
-        </View>
+        </KeyboardAvoidingView>
       </View>
-    </KeyboardAvoidingView>
+    </RNSSafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' 
-      ? StatusBar.currentHeight + 20 
-      : 44,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 16,
-    height: 70,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-    backgroundColor: '#fff',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000',
-    marginLeft: 8,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerButtonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 'auto',
-  },
-  headerButton: {
-    padding: 8,
-    backgroundColor: '#00B900',
-    borderRadius: 25,
-    marginLeft: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  headerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  messageList: {
-    flex: 1,
-    paddingBottom: 95,
-  },
-  chatContent: {
-    paddingHorizontal: 8,
-    flexGrow: 1,
-  },
-  inputSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 16,
-    height: 87,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-    backgroundColor: '#fff',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  input: {
-    flex: 1,
-    height: 59,
-    marginRight: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 30,
-    fontSize: 16,
-    color: '#333333',
-  },
-  sendButton: {
-    backgroundColor: '#00B900',
-    borderRadius: 30,
-    paddingHorizontal: 18,
-    height: 59,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 59,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#B3B3B3',
-  },
-  sendButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  typingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  typingAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  typingIndicator: {
-    backgroundColor: '#F0F0F0',
-    padding: 8,
-    borderRadius: 16,
-  },
-  typingText: {
-    color: '#999999',
-    fontSize: 13,
-  },
-  messageRow: {
-    flexDirection: 'row',
-    marginVertical: 4,
-    paddingHorizontal: 0,
-    maxWidth: '85%',
-  },
-  userRow: {
-    alignSelf: 'flex-end',
-    flexDirection: 'row-reverse',
-  },
-  botRow: {
-    alignSelf: 'flex-start',
-    marginLeft: -4,
-  },
-  avatarContainer: {
-    position: 'relative',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  chefImage: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-  },
-  statusDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00C300',
-    borderWidth: 1,
-    borderColor: '#fff',
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  welcomeText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 24,
-  },
-  categoryButton: {
-    width: '48%',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  categoryIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  categoryText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  popularDishes: {
-    width: '100%',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-  },
-  dishesScroll: {
-    paddingBottom: 8,
-  },
-  dishButton: {
-    backgroundColor: '#FFF',
-    padding: 12,
-    borderRadius: 12,
-    marginRight: 12,
-    alignItems: 'center',
-    width: 100,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  dishIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  dishName: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-  },
-  messageBubble: {
-    padding: 12,
-    borderRadius: 20,
-    maxWidth: '100%',
-    marginHorizontal: 0,
-  },
-  userBubble: {
-    backgroundColor: '#00B900',
-    borderTopRightRadius: 4,
-  },
-  botBubble: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  userText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  botText: {
-    color: '#1A1A1A',
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  timestamp: {
-    fontSize: 11,
-    marginTop: 4,
-  },
-  userTimestamp: {
-    color: 'rgba(255,255,255,0.7)',
-    alignSelf: 'flex-start',
-  },
-  botTimestamp: {
-    color: '#999999',
-    alignSelf: 'flex-end',
-  },
-  typingBubble: {
-    backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 20,
-    borderTopLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    maxWidth: '50%',
-  },
-  typingText: {
-    color: '#999999',
-    fontSize: 13,
-  },
-});

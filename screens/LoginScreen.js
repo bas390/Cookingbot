@@ -12,8 +12,10 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth } from '../firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { useTheme } from '../context/ThemeContext';
 
 export default function LoginScreen({ navigation }) {
+  const { isDarkMode } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -53,6 +55,83 @@ export default function LoginScreen({ navigation }) {
   const handleRegister = () => {
     navigation.navigate('Register');
   };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    title: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      marginBottom: 30,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    spacing: {
+      marginBottom: 20,
+    },
+    errorText: {
+      color: '#FF5252',
+      fontSize: 14,
+      marginBottom: 10,
+    },
+    input: {
+      width: '100%',
+      height: 50,
+      paddingLeft: 15,
+      paddingRight: 40,
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#E5E5E5',
+      borderRadius: 8,
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    passwordContainer: {
+      position: 'relative',
+      width: '100%',
+      marginBottom: 15,
+    },
+    eyeIcon: {
+      position: 'absolute',
+      right: 15,
+      top: 13,
+      height: 24,
+      width: 24,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    button: {
+      backgroundColor: '#00B900',
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      width: '100%',
+      marginBottom: 15,
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+      fontSize: 16,
+    },
+    registerButton: {
+      backgroundColor: '#FF5722',
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      width: '100%',
+    },
+    registerButtonText: {
+      color: '#fff',
+      fontWeight: 'bold',
+      fontSize: 16,
+    },
+  });
 
   return (
     <KeyboardAvoidingView
@@ -112,80 +191,3 @@ export default function LoginScreen({ navigation }) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 30,
-    color: '#333',
-  },
-  spacing: {
-    marginBottom: 20, // ระยะห่างระหว่างแต่ละ element
-  },
-  errorText: {
-    color: 'red',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  input: {
-    width: '100%',
-    height: 50, // กำหนดความสูงของ TextInput
-    paddingLeft: 15,
-    paddingRight: 40, // เผื่อพื้นที่ให้ไอคอนดวงตา
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    marginBottom: 15,
-  },
-  passwordContainer: {
-    position: 'relative',
-    width: '100%',
-    marginBottom: 15,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 15, // ระยะห่างจากขอบขวา
-    top: 13, // ปรับให้ตรงกลาง TextInput ตามความสูงที่กำหนด
-    height: 24,
-    width: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  button: {
-    backgroundColor: '#FF5722',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 15,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  registerButton: {
-    backgroundColor: '#4CAF50',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '100%',
-  },
-  registerButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-});

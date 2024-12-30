@@ -13,8 +13,10 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
+import { useTheme } from '../context/ThemeContext';
 
 export default function RegisterScreen({ navigation }) {
+  const { isDarkMode } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -73,6 +75,81 @@ export default function RegisterScreen({ navigation }) {
       }
     }
   };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    title: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      marginBottom: 30,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    errorText: {
+      color: '#FF5252',
+      fontSize: 14,
+      marginBottom: 20,
+    },
+    input: {
+      width: '100%',
+      height: 50,
+      paddingLeft: 15,
+      paddingRight: 40,
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#E5E5E5',
+      borderRadius: 8,
+      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    passwordContainer: {
+      position: 'relative',
+      width: '100%',
+    },
+    eyeIcon: {
+      position: 'absolute',
+      right: 15,
+      top: 13,
+      height: 24,
+      width: 24,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    registerButton: {
+      backgroundColor: '#00B900',
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      width: '100%',
+    },
+    registerButtonText: {
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+      fontSize: 16,
+    },
+    loginButton: {
+      backgroundColor: '#FF5722',
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      width: '100%',
+    },
+    loginButtonText: {
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+      fontSize: 16,
+    },
+    spacing: {
+      marginBottom: 20,
+    },
+  });
 
   return (
     <KeyboardAvoidingView
@@ -156,77 +233,3 @@ export default function RegisterScreen({ navigation }) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 30,
-    color: '#333',
-  },
-  errorText: {
-    color: 'red',
-    fontSize: 14,
-    marginBottom: 20,
-  },
-  input: {
-    width: '100%',
-    height: 50,
-    paddingLeft: 15,
-    paddingRight: 40,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-  passwordContainer: {
-    position: 'relative',
-    width: '100%',
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 15,
-    top: 13,
-    height: 24,
-    width: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  registerButton: {
-    backgroundColor: '#4CAF50',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '100%',
-  },
-  registerButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  loginButton: {
-    backgroundColor: '#FF5722',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '100%',
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  spacing: {
-    marginBottom: 20,
-  },
-});
