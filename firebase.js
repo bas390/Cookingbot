@@ -1,16 +1,32 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, orderBy, limit } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAmGOuyVNeEXUlS3QC-SoB6qEoKXodpFE",
+  apiKey: "AIzaSyAmGOuyVNeEXUlSU3QC-SObo6gEoXdopFE",
   authDomain: "aicook-1042e.firebaseapp.com",
+  databaseURL: "https://aicook-1042e-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "aicook-1042e",
-  storageBucket: "aicook-1042e.appspot.com",
-  messagingSenderId: "35903625995",
-  appId: "1:35903625995:web:38d4622c0f6a3a87b95ef6"
+  storageBucket: "aicook-1042e.firebasestorage.app",
+  messagingSenderId: "35093052995",
+  appId: "1:35093052995:web:38d0262ccf063a87b95ef6",
+  measurementId: "G-PQW9GYK0V5"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const auth = getAuth(app); 
+export const auth = getAuth(app);
+export const database = getDatabase(app);
+
+// ไม่จำเป็นต้องใช้ analytics ใน React Native
+// const analytics = getAnalytics(app); 
+
+// สร้าง references สำหรับ Realtime Database
+export const dbRef = {
+  users: 'users',
+  chats: 'chats',
+  messages: 'messages',
+  userChats: 'userChats'
+}; 

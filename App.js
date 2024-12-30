@@ -25,13 +25,17 @@ export default function App() {
         <Stack.Screen
           name="Home"
           component={HomeScreen}
-          options={{ title: 'Chat History' }}
+          options={{ 
+            title: 'Chat History',
+            headerShown: false 
+          }}
         />
         <Stack.Screen
           name="Chatbot"
           component={ChatbotScreen}
           options={({ route }) => ({
             title: `Chat ${route.params.chatId || ''}`,
+            headerShown: false
           })}
         />
       </Stack.Navigator>
