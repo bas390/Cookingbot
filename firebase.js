@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, query, orderBy, limit } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAmGOuyVNeEXUlSU3QC-SObo6gEoXdopFE",
@@ -17,7 +18,9 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
 export const database = getDatabase(app);
 
 // ไม่จำเป็นต้องใช้ analytics ใน React Native

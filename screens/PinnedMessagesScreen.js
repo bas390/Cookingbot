@@ -5,30 +5,30 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  Image,
+  Alert,
   SafeAreaView,
   Platform,
   StatusBar,
-  Image,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useTheme } from '../context/ThemeContext';
 
 export default function PinnedMessagesScreen({ navigation }) {
   const { isDarkMode } = useTheme();
   const [pinnedMessages, setPinnedMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadPinnedMessages();
   }, []);
 
   const loadPinnedMessages = async () => {
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
 
+    try {
       const messagesRef = collection(db, 'chats');
       const q = query(
         messagesRef,
@@ -36,54 +36,91 @@ export default function PinnedMessagesScreen({ navigation }) {
         where('isPinned', '==', true),
         orderBy('pinnedAt', 'desc')
       );
-
+      
       const snapshot = await getDocs(q);
       const messages = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-
+      
       setPinnedMessages(messages);
     } catch (error) {
       console.error('Error loading pinned messages:', error);
-    } finally {
-      setIsLoading(false);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถโหลดข้อความที่ปักหมุดได้');
     }
   };
 
-  const renderMessage = ({ item }) => (
-    <View style={[styles.messageContainer, item.sender === 'user' ? styles.userMessage : styles.botMessage]}>
-      {item.sender === 'bot' && (
-        <View style={styles.avatarContainer}>
-          <Image 
-            source={require('../assets/icon.png')} 
-            style={styles.chefImage}
-            resizeMode="contain"
-          />
-        </View>
-      )}
-      <View style={[
-        styles.messageBubble,
-        item.sender === 'user' ? styles.userBubble : styles.botBubble
-      ]}>
-        <View style={styles.messageHeader}>
-          <MaterialIcons 
-            name="push-pin" 
-            size={16} 
-            color="#00B900"
-            style={styles.pinIcon}
-          />
-          <Text style={styles.timestamp}>{item.timestamp}</Text>
-        </View>
-        <Text style={[
-          styles.messageText,
-          item.sender === 'user' ? styles.userText : styles.botText
+  const handleUnpinMessage = async (messageId) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      const messageRef = doc(db, 'chats', messageId);
+      await updateDoc(messageRef, {
+        isPinned: false,
+        pinnedAt: null
+      });
+      
+      // อัพเดท state ทันที
+      setPinnedMessages(prevMessages => 
+        prevMessages.filter(msg => msg.id !== messageId)
+      );
+    } catch (error) {
+      console.error('Error unpinning message:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถยกเลิกการปักหมุดข้อความได้');
+    }
+  };
+
+  const renderMessage = ({ item }) => {
+    const isUser = item.sender === 'user';
+    const messageTime = new Date(item.timestamp).toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    return (
+      <View style={[styles.messageRow, isUser ? styles.userRow : styles.botRow]}>
+        {!isUser && (
+          <View style={styles.avatarContainer}>
+            <Image 
+              source={require('../assets/icon.png')} 
+              style={styles.chefImage}
+              resizeMode="contain"
+            />
+            <View style={styles.statusDot} />
+          </View>
+        )}
+        <View style={[
+          styles.messageBubble,
+          isUser ? styles.userBubble : styles.botBubble,
         ]}>
-          {item.text}
-        </Text>
+          <Text style={isUser ? styles.userText : styles.botText}>
+            {item.text}
+          </Text>
+          <View style={styles.messageFooter}>
+            <Text style={[
+              styles.timestamp,
+              isUser ? styles.userTimestamp : styles.botTimestamp
+            ]}>
+              {messageTime}
+            </Text>
+            <TouchableOpacity
+              style={styles.unpinButton}
+              onPress={() => handleUnpinMessage(item.id)}
+            >
+              <MaterialIcons
+                name="push-pin"
+                size={16}
+                color="#FFD700"
+                style={{ transform: [{ rotate: '-45deg' }] }}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -93,36 +130,43 @@ export default function PinnedMessagesScreen({ navigation }) {
     header: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
       paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
     },
     backButton: {
       padding: 8,
-      marginRight: 8,
-      borderRadius: 20,
+      borderRadius: 12,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
-    title: {
-      fontSize: 20,
-      fontWeight: '600',
+    headerTitle: {
+      fontSize: 28,
+      fontWeight: '700',
       color: isDarkMode ? '#FFFFFF' : '#000000',
     },
-    messageList: {
-      flex: 1,
-      padding: 16,
-    },
-    messageContainer: {
+    messageRow: {
       flexDirection: 'row',
-      marginBottom: 16,
-      alignItems: 'flex-start',
+      marginVertical: 4,
+      paddingHorizontal: 16,
     },
-    userMessage: {
+    userRow: {
       justifyContent: 'flex-end',
     },
-    botMessage: {
+    botRow: {
       justifyContent: 'flex-start',
     },
     avatarContainer: {
@@ -141,10 +185,22 @@ export default function PinnedMessagesScreen({ navigation }) {
       height: 28,
       borderRadius: 14,
     },
+    statusDot: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: '#00B900',
+      borderWidth: 2,
+      borderColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
     messageBubble: {
       maxWidth: '80%',
       padding: 12,
       borderRadius: 16,
+      marginVertical: 4,
       elevation: 1,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 1 },
@@ -154,93 +210,96 @@ export default function PinnedMessagesScreen({ navigation }) {
     userBubble: {
       backgroundColor: '#00B900',
       borderTopRightRadius: 4,
+      marginLeft: 'auto',
     },
     botBubble: {
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderTopLeftRadius: 4,
-    },
-    messageHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 4,
-    },
-    pinIcon: {
-      marginRight: 4,
-      transform: [{ rotate: '45deg' }],
-    },
-    timestamp: {
-      fontSize: 12,
-      color: isDarkMode ? '#999999' : '#666666',
-    },
-    messageText: {
-      fontSize: 16,
-      lineHeight: 24,
+      marginRight: 'auto',
     },
     userText: {
       color: '#FFFFFF',
+      fontSize: 16,
+      lineHeight: 24,
     },
     botText: {
       color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 16,
+      lineHeight: 24,
+    },
+    messageFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    timestamp: {
+      fontSize: 12,
+      opacity: 0.7,
+    },
+    userTimestamp: {
+      color: 'rgba(255,255,255,0.7)',
+      textAlign: 'right',
+    },
+    botTimestamp: {
+      color: isDarkMode ? '#999999' : '#666666',
+      textAlign: 'left',
+    },
+    unpinButton: {
+      padding: 4,
+      borderRadius: 12,
     },
     emptyContainer: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      padding: 16,
+      paddingHorizontal: 32,
     },
     emptyIcon: {
       marginBottom: 16,
+      opacity: 0.5,
     },
     emptyText: {
       fontSize: 18,
-      fontWeight: '500',
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      marginBottom: 8,
       textAlign: 'center',
-    },
-    emptySubtext: {
-      fontSize: 14,
-      color: isDarkMode ? '#999999' : '#666666',
-      textAlign: 'center',
+      opacity: 0.7,
     },
   }), [isDarkMode]);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons 
-            name="arrow-back" 
-            size={24} 
-            color={isDarkMode ? '#FFFFFF' : '#000000'} 
-          />
-        </TouchableOpacity>
-        <Text style={styles.title}>ข้อความที่ปักหมุด</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <MaterialIcons name="arrow-back" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>ข้อความที่ปักหมุด</Text>
+        </View>
       </View>
 
-      {pinnedMessages.length > 0 ? (
-        <FlatList
-          data={pinnedMessages}
-          renderItem={renderMessage}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.messageList}
-        />
-      ) : (
+      {pinnedMessages.length === 0 ? (
         <View style={styles.emptyContainer}>
           <MaterialIcons 
             name="push-pin" 
             size={48} 
-            color={isDarkMode ? '#666666' : '#CCCCCC'}
-            style={[styles.emptyIcon, { transform: [{ rotate: '45deg' }] }]}
+            color={isDarkMode ? '#FFFFFF' : '#000000'} 
+            style={styles.emptyIcon}
           />
-          <Text style={styles.emptyText}>ไม่มีข้อความที่ปักหมุด</Text>
-          <Text style={styles.emptySubtext}>
-            ข้อความที่คุณปักหมุดจะแสดงที่นี่
+          <Text style={styles.emptyText}>
+            ยังไม่มีข้อความที่ปักหมุด
           </Text>
         </View>
+      ) : (
+        <FlatList
+          data={pinnedMessages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingVertical: 8 }}
+        />
       )}
     </SafeAreaView>
   );

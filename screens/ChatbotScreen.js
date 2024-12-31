@@ -163,7 +163,7 @@ export default function ChatbotScreen({ navigation }) {
   const [useGPT, setUseGPT] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [pinnedMessages, setPinnedMessages] = useState([]);
+  const [pinnedMessage, setPinnedMessage] = useState(null);
   const [timers, setTimers] = useState({});
 
   // สร้าง styles ด้วย useMemo
@@ -185,12 +185,12 @@ export default function ChatbotScreen({ navigation }) {
       paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
-      elevation: 3,
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      elevation: 4,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.1,
-      shadowRadius: 2,
+      shadowRadius: 3,
     },
     headerLeft: {
       flexDirection: 'row',
@@ -199,21 +199,22 @@ export default function ChatbotScreen({ navigation }) {
     },
     backButton: {
       padding: 8,
-      borderRadius: 20,
+      borderRadius: 12,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
     headerTitle: {
-      fontSize: 20,
-      fontWeight: '600',
+      fontSize: 28,
+      fontWeight: '700',
       color: isDarkMode ? '#FFFFFF' : '#000000',
     },
     headerButtons: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 12,
     },
     headerButton: {
       padding: 8,
-      borderRadius: 20,
+      borderRadius: 12,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
     messageList: {
@@ -363,9 +364,10 @@ export default function ChatbotScreen({ navigation }) {
     },
     pinnedBubble: {
       borderLeftWidth: 3,
-      borderLeftColor: '#00B900',
+      borderLeftColor: '#FFD700',
+      backgroundColor: isDarkMode ? '#2C2C2E' : '#F5F5F5',
     },
-    pinnedHeader: {
+    pinnedIndicator: {
       flexDirection: 'row',
       alignItems: 'center',
       marginBottom: 4,
@@ -373,25 +375,27 @@ export default function ChatbotScreen({ navigation }) {
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
     },
-    pinnedHeaderIcon: {
+    pinnedIcon: {
       marginRight: 4,
-      transform: [{ rotate: '45deg' }],
+      transform: [{ rotate: '-45deg' }],
     },
-    pinnedHeaderText: {
+    pinnedText: {
       fontSize: 12,
-      color: '#00B900',
+      color: '#FFD700',
       fontWeight: '500',
     },
     messageFooter: {
       flexDirection: 'row',
-      alignItems: 'center',
       justifyContent: 'space-between',
+      alignItems: 'center',
       marginTop: 4,
+      paddingTop: 4,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
     },
     pinButton: {
       padding: 4,
       borderRadius: 12,
-      backgroundColor: 'transparent',
     },
     pinnedButton: {
       backgroundColor: 'rgba(0, 185, 0, 0.1)',
@@ -399,32 +403,60 @@ export default function ChatbotScreen({ navigation }) {
     pinIcon: {
       transform: [{ rotate: '45deg' }],
     },
+    timerBubble: {
+      minWidth: 150,
+    },
+    timerContainer: {
+      marginTop: 8,
+      alignItems: 'center',
+    },
+    timerText: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginBottom: 4,
+    },
+    timerButtons: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    timerButton: {
+      padding: 8,
+      borderRadius: 20,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+    },
   }), [isDarkMode]);
 
   // ดึงข้อความเมื่อ component โหลด
   useEffect(() => {
     const currentUser = auth.currentUser;
-    if (!currentUser) return;
+    if (!currentUser || !route.params?.chatId) return;
 
-        const messagesRef = collection(db, 'chats');
-        const q = query(
-          messagesRef,
+    const messagesRef = collection(db, 'chats');
+    const q = query(
+      messagesRef,
       where('userId', '==', currentUser.uid),
-      orderBy('createdAt', 'desc')
+      where('chatId', '==', route.params.chatId),
+      where('type', '==', 'message'),
+      orderBy('createdAt', 'desc'),
+      limit(20)
     );
 
-    // ใช้ onSnapshot แทน getDocs เพื่อรับการอัพเดทแบบเรียลไทม์
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const messageList = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
+        id: doc.id,
+        ...doc.data()
       }));
-        setMessages(messageList);
+      setMessages(messageList);
     });
 
-    // Cleanup subscription
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      // ท้างเฉพาะสถานะการพิมพ์
+      setInput('');
+      setIsTyping(false);
+    };
+  }, [route.params?.chatId]);
 
   useEffect(() => {
     const saveMessages = async () => {
@@ -680,82 +712,178 @@ export default function ChatbotScreen({ navigation }) {
     return 'สวัสดีค่ะ ดิฉันสามารถแนะนำวิธีทำอาหารไทยยอดนิยมได้แก่:\n1. ต้มยำ\n2. แกงเขียวหวาน\n3. ผัดกะเพรา\n4. ผัดไทย\n5. ส้มตำ\n6. มะม่วงข้าวเหนียว\n7. ต้มไข่\n\nกรุณาพิมพ์ชื่ออาหารที่ต้องการทราบวิธีทำค่ะ';
   };
 
-  const handleTimerMessage = (minutes) => {
-    const timerMessage = {
-      id: generateMessageId(),
+  const handleTimerMessage = async (minutes) => {
+    const totalSeconds = minutes * 60;
+    const messageId = Date.now().toString();
+    const now = new Date();
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser || !route.params?.chatId) return;
+
+    const messagesRef = collection(db, 'chats');
+    const newMessage = {
       text: `ตั้งเวลา ${minutes} นาที`,
       sender: 'bot',
-      createdAt: new Date().toISOString(),
-      isTimer: true,
-      timerMinutes: minutes,
-      timerStartedAt: null,
-      timerStatus: 'ready' // 'ready', 'running', 'paused', 'finished'
+      timestamp: now.toISOString(),
+      createdAt: now.getTime(),
+      userId: currentUser.uid,
+      chatId: route.params.chatId,
+      type: 'message',
+      timer: {
+        initialTime: totalSeconds,
+        remainingTime: totalSeconds,
+        isRunning: false
+      }
     };
     
-    setMessages(prevMessages => [timerMessage, ...prevMessages]);
+    try {
+      const docRef = await addDoc(messagesRef, newMessage);
+      startTimer(docRef.id);
+    } catch (error) {
+      console.error('Error adding timer message:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถตั้งเวลาได้ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const startTimer = (messageId) => {
+    if (timers[messageId]) return; // ถ้ามีตัวจับเวลาอยู่แล้วให้ return
+
+    const timer = setInterval(() => {
+      setMessages(prevMessages => {
+        const updatedMessages = prevMessages.map(msg => {
+          if (msg.id === messageId && msg.timer) {
+            const remainingTime = msg.timer.remainingTime - 1;
+            if (remainingTime <= 0) {
+              stopTimer(messageId);
+              return {
+                ...msg,
+                timer: { ...msg.timer, remainingTime: 0, isRunning: false }
+              };
+            }
+            return {
+              ...msg,
+              timer: { ...msg.timer, remainingTime, isRunning: true }
+            };
+          }
+          return msg;
+        });
+        return updatedMessages;
+      });
+    }, 1000);
+
+    setTimers(prev => ({ ...prev, [messageId]: timer }));
+  };
+
+  const stopTimer = (messageId) => {
+    if (timers[messageId]) {
+      clearInterval(timers[messageId]);
+      setTimers(prev => {
+        const newTimers = { ...prev };
+        delete newTimers[messageId];
+        return newTimers;
+      });
+
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === messageId && msg.timer
+            ? { ...msg, timer: { ...msg.timer, isRunning: false } }
+            : msg
+        )
+      );
+
+      // แจ้งเตือนเมื่อหมดเวลา
+      Alert.alert(
+        'หมดเวลา!',
+        'ตัวจับเวลาได้สิ้นสุดลงแล้ว',
+        [{ text: 'ตกลง' }]
+      );
+    }
+  };
+
+  const resetTimer = (messageId) => {
+    const message = messages.find(msg => msg.id === messageId);
+    if (message?.timer) {
+      stopTimer(messageId);
+      setMessages(prevMessages =>
+        prevMessages.map(msg =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                timer: {
+                  ...msg.timer,
+                  remainingTime: msg.timer.initialTime,
+                  isRunning: false
+                }
+              }
+            : msg
+        )
+      );
+    }
   };
 
   const handleSend = async () => {
     if (!input.trim()) return;
 
-    // ตรวจสอบว่าเป็นคำสั่งตั้งเวลาหรือไม่
+    const currentUser = auth.currentUser;
+    if (!currentUser || !route.params?.chatId) return;
+
+    // ตรวจสอบคำสั่งจับเวลาก่อน
     const timerMatch = input.match(/^(\d+)$/);
     if (timerMatch) {
       const minutes = parseInt(timerMatch[1]);
-      if (minutes > 0 && minutes <= 180) { // จำกัดไม่เกิน 3 ชั่วโมง
+      if (minutes > 0 && minutes <= 180) {
         handleTimerMessage(minutes);
         setInput('');
         return;
       }
     }
 
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-
-    const timestamp = new Date().toLocaleTimeString();
     const messagesRef = collection(db, 'chats');
+    const now = new Date();
 
     try {
       // เก็บข้อความของผู้ใช้
-      await addDoc(messagesRef, {
+      const userMessage = {
         text: input,
         sender: 'user',
-        timestamp: timestamp,
-        createdAt: new Date().getTime(),
-        userId: currentUser.uid
-      });
+        timestamp: now.toISOString(),
+        createdAt: now.getTime(),
+        userId: currentUser.uid,
+        chatId: route.params.chatId,
+        type: 'message'
+      };
 
+      await addDoc(messagesRef, userMessage);
       setInput('');
       setIsTyping(true);
 
-      // ตรวจสอบว่าเป็นคำสั่งจับเวลาหรือตัวเลขจำนวนนาที
-      const timerMatch = input.toLowerCase().match(/จับเวลา\s*(\d+)\s*นาที/) || input.match(/^\d+$/);
-      if (timerMatch) {
-        const minutes = parseInt(timerMatch[1] || timerMatch[0]);
-        await handleTimerMessage(minutes);
-      } else {
-      // เลือกใช้ GPT หรือ Simple Response
+      // ต่งข้อความตอบกลับ
       const botResponse = useGPT ? 
         await getChatGPTResponse(input) : 
         getSimpleResponse(input);
 
-      const botTimestamp = new Date().toLocaleTimeString();
-      
-      await addDoc(messagesRef, {
+      const botMessage = {
         text: botResponse,
         sender: 'bot',
-        timestamp: botTimestamp,
+        timestamp: new Date().toISOString(),
         createdAt: new Date().getTime(),
-        userId: currentUser.uid
-      });
-      }
+        userId: currentUser.uid,
+        chatId: route.params.chatId,
+        type: 'message'
+      };
 
+      await addDoc(messagesRef, botMessage);
     } catch (error) {
       console.error('Error sending message:', error);
       Alert.alert('ข้อผิดพลาด', 'ไม่สามารถส่งข้อความได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsTyping(false);
-      startAnimation();
     }
   };
 
@@ -788,22 +916,24 @@ export default function ChatbotScreen({ navigation }) {
         text: 'ลบ', 
         onPress: async () => {
           try {
-          const currentUser = auth.currentUser;
-          if (!currentUser) return;
+            const currentUser = auth.currentUser;
+            if (!currentUser || !route.params?.chatId) return;
 
-          const messagesRef = collection(db, 'chats');
-          const q = query(
-            messagesRef,
-            where('userId', '==', currentUser.uid)
-          );
-          const snapshot = await getDocs(q);
-          
-            // ลบข้อความทั้งหมดใน Firestore
+            const messagesRef = collection(db, 'chats');
+            const q = query(
+              messagesRef,
+              where('userId', '==', currentUser.uid),
+              where('chatId', '==', route.params.chatId),
+              where('type', '==', 'message')
+            );
+            const snapshot = await getDocs(q);
+            
+            // ลบเฉพาะข้อความในห้องแชทนี้
             const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
             await Promise.all(deletePromises);
             
             // อัพเดท state ให้เป็นอาเรย์ว่าง
-            setMessages([]); // ตรวจสอบว่ามีการเรียกใช้ setMessages([]) หลังจากลบเสร็จแล้ว
+            setMessages([]);
 
           } catch (error) {
             console.error('Error clearing messages:', error);
@@ -816,13 +946,16 @@ export default function ChatbotScreen({ navigation }) {
   };
 
   const renderMessage = ({ item }) => {
-    if (item.isTimer) {
-      // ... existing timer code ...
-    }
+    const isUser = item.sender === 'user';
+    const messageTime = new Date(item.timestamp).toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
 
     return (
-      <View style={[styles.messageRow, item.sender === 'user' ? styles.userRow : styles.botRow]}>
-        {item.sender === 'bot' && (
+      <View style={[styles.messageRow, isUser ? styles.userRow : styles.botRow]}>
+        {!isUser && (
           <View style={styles.avatarContainer}>
             <Image 
               source={require('../assets/icon.png')} 
@@ -834,46 +967,71 @@ export default function ChatbotScreen({ navigation }) {
         )}
         <View style={[
           styles.messageBubble,
-          item.sender === 'user' ? styles.userBubble : styles.botBubble,
+          isUser ? styles.userBubble : styles.botBubble,
+          item.timer && styles.timerBubble,
           item.isPinned && styles.pinnedBubble
         ]}>
           {item.isPinned && (
-            <View style={styles.pinnedHeader}>
+            <View style={styles.pinnedIndicator}>
               <MaterialIcons 
                 name="push-pin" 
                 size={14} 
-                color="#00B900"
-                style={styles.pinnedHeaderIcon}
+                color="#FFD700" 
+                style={styles.pinnedIcon}
               />
-              <Text style={styles.pinnedHeaderText}>ข้อความที่ปักหมุด</Text>
+              <Text style={styles.pinnedText}>ปักหมุด</Text>
             </View>
           )}
-          <View style={styles.messageContent}>
-            <Text style={item.sender === 'user' ? styles.userText : styles.botText}>
-              {item.text}
-            </Text>
-            <View style={styles.messageFooter}>
-              <Text style={[
-                styles.timestamp,
-                item.sender === 'user' ? styles.userTimestamp : styles.botTimestamp
-              ]}>
-                {item.timestamp}
+          <Text style={isUser ? styles.userText : styles.botText}>
+            {item.text}
+          </Text>
+          {item.timer && (
+            <View style={styles.timerContainer}>
+              <Text style={styles.timerText}>
+                {formatTime(item.timer.remainingTime)}
               </Text>
-              <TouchableOpacity 
-                style={[
-                  styles.pinButton,
-                  item.isPinned && styles.pinnedButton
-                ]}
-                onPress={() => handlePinMessage(item.id)}
-              >
-                <MaterialIcons 
-                  name={item.isPinned ? "push-pin" : "push-pin"} 
-                  size={16} 
-                  color={item.isPinned ? "#00B900" : (isDarkMode ? "#999999" : "#666666")}
-                  style={[styles.pinIcon, !item.isPinned && { opacity: 0.5 }]}
-                />
-              </TouchableOpacity>
+              <View style={styles.timerButtons}>
+                <TouchableOpacity
+                  style={styles.timerButton}
+                  onPress={() => item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id)}
+                >
+                  <MaterialIcons
+                    name={item.timer.isRunning ? 'pause' : 'play-arrow'}
+                    size={20}
+                    color={isDarkMode ? '#FFFFFF' : '#000000'}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.timerButton}
+                  onPress={() => resetTimer(item.id)}
+                >
+                  <MaterialIcons
+                    name="refresh"
+                    size={20}
+                    color={isDarkMode ? '#FFFFFF' : '#000000'}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
+          )}
+          <View style={styles.messageFooter}>
+            <Text style={[
+              styles.timestamp,
+              isUser ? styles.userTimestamp : styles.botTimestamp
+            ]}>
+              {messageTime}
+            </Text>
+            <TouchableOpacity
+              style={styles.pinButton}
+              onPress={() => item.isPinned ? handleUnpinMessage(item.id) : handlePinMessage(item.id)}
+            >
+              <MaterialIcons
+                name={item.isPinned ? "push-pin" : "push-pin"}
+                size={16}
+                color={item.isPinned ? "#FFD700" : isDarkMode ? '#FFFFFF40' : '#00000040'}
+                style={item.isPinned ? { transform: [{ rotate: '-45deg' }] } : null}
+              />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -910,10 +1068,18 @@ export default function ChatbotScreen({ navigation }) {
     try {
       setIsLoadingMore(true);
       const lastMessage = messages[messages.length - 1];
+      
+      if (!lastMessage?.createdAt || !route.params?.chatId) {
+        setHasMore(false);
+        return;
+      }
+
       const messagesRef = collection(db, 'chats');
       const q = query(
         messagesRef,
         where('userId', '==', auth.currentUser.uid),
+        where('chatId', '==', route.params.chatId),
+        where('type', '==', 'message'),
         orderBy('createdAt', 'desc'),
         startAfter(lastMessage.createdAt),
         limit(20)
@@ -932,6 +1098,7 @@ export default function ChatbotScreen({ navigation }) {
       setMessages(prev => [...prev, ...newMessages]);
     } catch (error) {
       console.error('Error loading more messages:', error);
+      setHasMore(false);
     } finally {
       setIsLoadingMore(false);
     }
@@ -952,45 +1119,61 @@ export default function ChatbotScreen({ navigation }) {
     }
   };
 
-  useEffect(() => {
-    return () => {
-      // ทำความสะอาดเมื่อออจากหน้าจอ
-      setMessages([]);
-      setInput('');
-      setIsTyping(false);
-    };
-  }, []);
-
   const handlePinMessage = async (messageId) => {
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
 
+    try {
       const messageRef = doc(db, 'chats', messageId);
       const messageDoc = await getDoc(messageRef);
       
       if (messageDoc.exists()) {
         const messageData = messageDoc.data();
-        const isPinned = messageData.isPinned || false;
-        
-        // อัพเดทสถานะการปักหมุด
-        await updateDoc(messageRef, {
-          isPinned: !isPinned,
-          pinnedAt: !isPinned ? new Date().getTime() : null
-        });
-
-        // อัพเดท state
-        setMessages(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === messageId 
-              ? { ...msg, isPinned: !isPinned, pinnedAt: !isPinned ? new Date().getTime() : null }
-              : msg
-          )
-        );
+        if (messageData.userId === currentUser.uid) {
+          const pinnedAt = new Date().getTime();
+          await updateDoc(messageRef, {
+            isPinned: true,
+            pinnedAt: pinnedAt
+          });
+          
+          // อัพเดท state ทันที
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === messageId 
+                ? { ...msg, isPinned: true, pinnedAt: pinnedAt }
+                : msg
+            )
+          );
+        }
       }
     } catch (error) {
       console.error('Error pinning message:', error);
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อความได้ กรุณาลองใหม่อีกครั้ง');
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถบักหมุดข้อความได้');
+    }
+  };
+
+  const handleUnpinMessage = async (messageId) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      const messageRef = doc(db, 'chats', messageId);
+      await updateDoc(messageRef, {
+        isPinned: false,
+        pinnedAt: null
+      });
+      
+      // อัพเดท state ทันที
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, isPinned: false, pinnedAt: null }
+            : msg
+        )
+      );
+    } catch (error) {
+      console.error('Error unpinning message:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถยกเลิกการปักหมุดข้อความได้');
     }
   };
 
@@ -1021,68 +1204,22 @@ export default function ChatbotScreen({ navigation }) {
     return () => clearInterval(timerInterval);
   }, []);
 
-  const startTimer = (messageId) => {
-    setMessages(prevMessages => 
-      prevMessages.map(msg => 
-        msg.id === messageId 
-          ? { 
-              ...msg, 
-              timerStatus: 'running',
-              timerStartedAt: new Date().toISOString(),
-              remainingTime: msg.timerMinutes 
-            }
-          : msg
-      )
-    );
-  };
-
-  const stopTimer = (messageId) => {
-    setMessages(prevMessages => 
-      prevMessages.map(msg => 
-        msg.id === messageId 
-          ? { ...msg, timerStatus: 'ready', timerStartedAt: null }
-          : msg
-      )
-    );
-  };
-
-  const resetTimer = (messageId) => {
-    setMessages(prevMessages => 
-      prevMessages.map(msg => 
-        msg.id === messageId 
-          ? { 
-              ...msg, 
-              timerStatus: 'ready',
-              timerStartedAt: null,
-              remainingTime: msg.timerMinutes 
-            }
-          : msg
-      )
-    );
-  };
-
   return (
     <RNSSafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
               <MaterialIcons name="arrow-back" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-          </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
-              แชท
-          </Text>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>
+              {chatTitle}
+            </Text>
           </View>
           <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => navigation.navigate('PinnedMessages')}
-            >
-              <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.headerButton}
               onPress={clearMessages}
@@ -1100,7 +1237,7 @@ export default function ChatbotScreen({ navigation }) {
               />
             </TouchableOpacity>
             <TouchableOpacity 
-              style={styles.headerThemeButton}
+              style={styles.headerButton}
               onPress={toggleTheme}
             >
               <MaterialIcons 
@@ -1117,20 +1254,20 @@ export default function ChatbotScreen({ navigation }) {
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
             ref={flatListRef}
-            inverted
+            inverted={true}
             contentContainerStyle={styles.chatContent}
-          style={styles.messageList}
-          onEndReached={loadMoreMessages}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
-          refreshControl={
-            <RefreshControl
-              refreshing={isLoadingMore}
-              onRefresh={loadMoreMessages}
-              tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
-            />
-          }
-        />
+            style={styles.messageList}
+            onEndReached={loadMoreMessages}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
+            refreshControl={
+              <RefreshControl
+                refreshing={isLoadingMore}
+                onRefresh={loadMoreMessages}
+                tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
+              />
+            }
+          />
 
         {isTyping && <BotTyping />}
 

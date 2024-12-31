@@ -15,9 +15,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Swipeable } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
-import { auth, database, dbRef } from '../firebase';
+import { auth, database, dbRef, db } from '../firebase';
 import { ref, query, orderByChild, onValue, set, update, remove } from 'firebase/database';
-import { addDoc, collection, deleteDoc, doc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { signOut } from 'firebase/auth';
 
@@ -32,55 +32,64 @@ export default function HomeScreen({ navigation }) {
 
   // โหลดข้อมูลแชทจาก AsyncStorage
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
 
-    const chatsRef = ref(database, `${dbRef.userChats}/${user.uid}`);
-    const chatsQuery = query(chatsRef, orderByChild('createdAt'));
+    const chatsRef = collection(db, 'chats');
+    const q = query(
+      chatsRef,
+      where('userId', '==', currentUser.uid),
+      where('type', '==', 'chat_info'),
+      orderBy('createdAt', 'desc')
+    );
 
-    const unsubscribe = onValue(chatsQuery, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const chatsArray = Object.entries(data).map(([id, chat]) => ({
-          id,
-          ...chat
-        }));
-        setChats(chatsArray.reverse());
-      } else {
-        setChats([]);
-      }
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const chatList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setChats(chatList);
+    }, (error) => {
+      console.error('Error loading chats:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลแชทได้');
     });
 
     return () => unsubscribe();
   }, []);
 
   // ฟังก์ชันเพิ่มแชทใหม่
-  const handleAddChat = () => {
+  const handleAddChat = async () => {
     if (!newChatName.trim()) {
       Alert.alert('แจ้งเตือน', 'กรุณาใส่ชื่อแชท');
       return;
     }
 
-    const user = auth.currentUser;
-    if (!user) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
 
-    const newChatRef = ref(database, `${dbRef.userChats}/${user.uid}/${generateUniqueId()}`);
-    const newChat = {
-      title: newChatName.trim(),
-      createdAt: new Date().toISOString(),
-      lastMessage: 'เริ่มต้นสนทนาใหม่',
-      lastMessageTime: new Date().toISOString()
-    };
+    try {
+      const newChat = {
+        title: newChatName.trim(),
+        createdAt: new Date().getTime(),
+        userId: currentUser.uid,
+        type: 'chat_info'
+      };
 
-    set(newChatRef, newChat)
-      .then(() => {
-        setNewChatName('');
-        setModalVisible(false);
-      })
-      .catch((error) => {
-        console.error('Error adding chat:', error);
-        Alert.alert('ข้อผิดพลาด', 'ไม่สามารถสร้างแชทได้ กรุณาลองใหม่');
+      const chatsRef = collection(db, 'chats');
+      const docRef = await addDoc(chatsRef, newChat);
+
+      setNewChatName('');
+      setModalVisible(false);
+
+      // นำทางไปยังห้องแชทใหม่
+      navigation.navigate('Chatbot', { 
+        title: newChat.title,
+        chatId: docRef.id
       });
+    } catch (error) {
+      console.error('Error adding chat:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถสร้างแชทได้ กรุณาลองใหม่อีกครั้ง');
+    }
   };
 
   // ฟังก์ชันแก้ไขชื่อแชท
@@ -114,16 +123,32 @@ export default function HomeScreen({ navigation }) {
         { text: 'ยกเลิก', style: 'cancel' },
         {
           text: 'ลบ',
-          onPress: () => {
-            const user = auth.currentUser;
-            if (!user) return;
+          onPress: async () => {
+            const currentUser = auth.currentUser;
+            if (!currentUser) return;
 
-            const chatRef = ref(database, `${dbRef.userChats}/${user.uid}/${chatId}`);
-            remove(chatRef)
-              .catch((error) => {
-                console.error('Error deleting chat:', error);
-                Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่');
-              });
+            try {
+              // ลบข้อมูลห้องแชท
+              const chatsRef = collection(db, 'chats');
+              const chatQuery = query(
+                chatsRef,
+                where('userId', '==', currentUser.uid),
+                where('type', 'in', ['chat_info', 'message']),
+                where('chatId', '==', chatId)
+              );
+              const snapshot = await getDocs(chatQuery);
+              
+              const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(deletePromises);
+
+              // ลบเอกสารห้องแชทหลัก
+              const mainChatRef = doc(db, 'chats', chatId);
+              await deleteDoc(mainChatRef);
+
+            } catch (error) {
+              console.error('Error deleting chat:', error);
+              Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่อีกครั้ง');
+            }
           },
           style: 'destructive'
         },
@@ -155,88 +180,104 @@ export default function HomeScreen({ navigation }) {
   };
 
   const renderChatItem = ({ item }) => {
-    const swipeActions = () => (
-      <View style={styles.swipeActions}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => {
-            setEditingChat(item);
-            setNewChatName(item.title);
-          }}
-        >
-          <MaterialIcons name="edit" size={24} color="#fff" />
-          <Text style={styles.actionButtonText}>แก้ไข</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteChat(item.id)}
-        >
-          <MaterialIcons name="delete" size={24} color="#fff" />
-          <Text style={styles.actionButtonText}>ลบ</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    const renderRightActions = (progress, dragX) => {
+      const scale = dragX.interpolate({
+        inputRange: [-100, 0],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+      });
+
+      return (
+        <View style={styles.rightActions}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.editButton]}
+            onPress={() => handleEditChat(item)}
+          >
+            <MaterialIcons name="edit" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={() => handleDeleteChat(item.id)}
+          >
+            <MaterialIcons name="delete" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      );
+    };
 
     return (
-      <Swipeable renderRightActions={swipeActions}>
+      <Swipeable
+        renderRightActions={renderRightActions}
+        rightThreshold={40}
+      >
         <TouchableOpacity
           style={styles.chatItem}
-          onPress={() => handleChatPress(item.id)}
-          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Chatbot', { 
+            title: item.title,
+            chatId: item.id
+          })}
         >
-          <View style={styles.chatIcon}>
-            <MaterialIcons name="chat" size={24} color="#00B900" />
-          </View>
           <View style={styles.chatInfo}>
-            <Text style={styles.chatTitle} numberOfLines={1}>
+            <Text style={[styles.chatTitle, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
               {item.title}
             </Text>
-            <Text style={styles.chatPreview} numberOfLines={1}>
-              {item.lastMessage || 'แตะเพื่อเริ่มสนทนา'}
+            <Text style={styles.chatDate}>
+              {new Date(item.createdAt).toLocaleDateString('th-TH')}
             </Text>
           </View>
-          <Text style={styles.chatTime}>
-            {new Date(item.lastMessageTime || item.createdAt).toLocaleDateString('th-TH')}
-          </Text>
+          <MaterialIcons 
+            name="chevron-right" 
+            size={24} 
+            color={isDarkMode ? '#666666' : '#999999'} 
+          />
         </TouchableOpacity>
       </Swipeable>
     );
   };
 
   const styles = useMemo(() => StyleSheet.create({
-    safeArea: {
-      flex: 1,
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
-    },
     container: {
       flex: 1,
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
     },
     header: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
-      padding: 16,
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
     },
     headerTitle: {
-      fontSize: 24,
-      fontWeight: '600',
+      fontSize: 28,
+      fontWeight: '700',
       color: isDarkMode ? '#FFFFFF' : '#000000',
     },
     headerButtons: {
       flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    headerRight: {
+      flexDirection: 'row',
       gap: 8,
     },
-    themeButton: {
+    headerButton: {
       padding: 8,
-      borderRadius: 20,
+      borderRadius: 12,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
     logoutButton: {
       padding: 8,
-      borderRadius: 20,
+      borderRadius: 12,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
     searchContainer: {
@@ -246,76 +287,78 @@ export default function HomeScreen({ navigation }) {
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
     },
     searchInput: {
-      height: 40,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
-      borderRadius: 20,
+      borderRadius: 12,
       paddingHorizontal: 16,
+      paddingVertical: 10,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
     },
     chatList: {
-      flexGrow: 1,
-      paddingVertical: 8,
+      paddingHorizontal: 16,
+      paddingTop: 12,
     },
     chatItem: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
       padding: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
-    },
-    chatIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 16,
+      borderRadius: 16,
+      marginBottom: 12,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
     },
     chatInfo: {
       flex: 1,
-      marginRight: 8,
+      marginRight: 12,
     },
     chatTitle: {
-      fontSize: 16,
-      fontWeight: '500',
-      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 18,
+      fontWeight: '600',
       marginBottom: 4,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
     },
-    chatPreview: {
+    chatDate: {
       fontSize: 14,
       color: isDarkMode ? '#999999' : '#666666',
     },
-    chatTime: {
-      fontSize: 12,
-      color: isDarkMode ? '#999999' : '#666666',
-      alignSelf: 'flex-start',
-    },
-    swipeActions: {
+    rightActions: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'flex-end',
+      paddingLeft: 12,
+    },
+    actionButton: {
+      padding: 12,
+      borderRadius: 12,
+      marginLeft: 8,
     },
     editButton: {
       backgroundColor: '#2196F3',
-      justifyContent: 'center',
-      alignItems: 'center',
-      width: 80,
-      height: '100%',
     },
     deleteButton: {
       backgroundColor: '#FF3B30',
+    },
+    emptyState: {
+      flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      width: 80,
-      height: '100%',
+      paddingHorizontal: 32,
     },
-    actionButtonText: {
-      color: '#FFFFFF',
-      fontSize: 12,
-      marginTop: 4,
+    emptyText: {
+      fontSize: 24,
+      fontWeight: '600',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    emptySubtext: {
+      fontSize: 16,
+      color: isDarkMode ? '#999999' : '#666666',
+      textAlign: 'center',
     },
     addButton: {
       position: 'absolute',
@@ -333,35 +376,18 @@ export default function HomeScreen({ navigation }) {
       shadowOpacity: 0.25,
       shadowRadius: 4,
     },
-    emptyState: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 16,
-    },
-    emptyText: {
-      fontSize: 18,
-      fontWeight: '500',
-      color: isDarkMode ? '#FFFFFF' : '#000000',
-      marginTop: 16,
-      marginBottom: 8,
-    },
-    emptySubtext: {
-      fontSize: 14,
-      color: isDarkMode ? '#999999' : '#666666',
-      textAlign: 'center',
-    },
     modalContainer: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      padding: 16,
     },
     modalContent: {
-      width: '80%',
+      width: '100%',
       backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
-      borderRadius: 12,
-      padding: 20,
+      borderRadius: 16,
+      padding: 24,
       elevation: 5,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -369,57 +395,68 @@ export default function HomeScreen({ navigation }) {
       shadowRadius: 4,
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: '600',
+      fontSize: 24,
+      fontWeight: '700',
       color: isDarkMode ? '#FFFFFF' : '#000000',
       marginBottom: 16,
-      textAlign: 'center',
     },
-    input: {
+    modalInput: {
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
-      borderRadius: 8,
-      padding: 12,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
       marginBottom: 16,
     },
     modalButtons: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-end',
       gap: 12,
     },
     modalButton: {
-      flex: 1,
-      backgroundColor: '#00B900',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
       borderRadius: 8,
-      padding: 12,
+      minWidth: 80,
       alignItems: 'center',
     },
     cancelButton: {
       backgroundColor: isDarkMode ? '#333' : '#E5E5E5',
     },
+    confirmButton: {
+      backgroundColor: '#00B900',
+    },
     modalButtonText: {
-      color: '#FFFFFF',
       fontSize: 16,
-      fontWeight: '500',
+      fontWeight: '600',
+      color: '#FFFFFF',
     },
   }), [isDarkMode]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? '#121212' : '#FFFFFF' }]}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>หน้าหลัก</Text>
+        <Text style={styles.headerTitle}>Chatbot</Text>
         <View style={styles.headerButtons}>
-          <TouchableOpacity 
-            style={styles.themeButton}
-            onPress={toggleTheme}
-          >
-            <MaterialIcons 
-              name={isDarkMode ? 'light-mode' : 'dark-mode'} 
-              size={24} 
-              color={isDarkMode ? '#FFFFFF' : '#000000'} 
-            />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('PinnedMessages')}
+            >
+              <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={toggleTheme}
+            >
+              <MaterialIcons 
+                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity 
             style={styles.logoutButton}
             onPress={handleLogout}
@@ -447,7 +484,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.emptyState}>
           <MaterialIcons 
             name="chat-bubble-outline" 
-            size={64} 
+            size={80} 
             color={isDarkMode ? '#666666' : '#CCCCCC'} 
           />
           <Text style={styles.emptyText}>ยังไม่มีแชท</Text>
@@ -465,54 +502,44 @@ export default function HomeScreen({ navigation }) {
       )}
 
       <TouchableOpacity 
-        style={styles.addButton} 
+        style={styles.addButton}
         onPress={() => setModalVisible(true)}
-        activeOpacity={0.8}
       >
         <MaterialIcons name="add" size={32} color="#FFFFFF" />
       </TouchableOpacity>
 
       <Modal
-        visible={modalVisible || !!editingChat}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setModalVisible(false);
-          setEditingChat(null);
-          setNewChatName('');
-        }}
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {editingChat ? 'แก้ไขชื่อแชท' : 'สร้างแชทใหม่'}
-            </Text>
+            <Text style={styles.modalTitle}>สร้างแชทใหม่</Text>
             <TextInput
-              style={styles.input}
-              placeholder="ใส่ชื่อแชท"
+              style={styles.modalInput}
+              placeholder="ชื่อแชท"
               placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
               value={newChatName}
               onChangeText={setNewChatName}
               autoFocus
             />
             <View style={styles.modalButtons}>
-              <TouchableOpacity
+              <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   setModalVisible(false);
-                  setEditingChat(null);
                   setNewChatName('');
                 }}
               >
                 <Text style={styles.modalButtonText}>ยกเลิก</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={editingChat ? handleEditChat : handleAddChat}
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={handleAddChat}
               >
-                <Text style={styles.modalButtonText}>
-                  {editingChat ? 'บันทึก' : 'สร้าง'}
-                </Text>
+                <Text style={styles.modalButtonText}>สร้าง</Text>
               </TouchableOpacity>
             </View>
           </View>
