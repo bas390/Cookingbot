@@ -172,6 +172,9 @@ export default function HomeScreen({ navigation }) {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      // ลบข้อมูล login เมื่อ logout
+      await AsyncStorage.removeItem('userEmail');
+      await AsyncStorage.removeItem('userPassword');
       navigation.replace('Login');
     } catch (error) {
       console.error('Error signing out:', error);

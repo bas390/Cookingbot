@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth } from '../firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen({ navigation }) {
   const { isDarkMode } = useTheme();
@@ -21,35 +23,86 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const checkLoginState = async () => {
+      try {
+        const savedEmail = await AsyncStorage.getItem('userEmail');
+        const savedPassword = await AsyncStorage.getItem('userPassword');
+        
+        if (savedEmail && savedPassword) {
+          try {
+            const userCredential = await signInWithEmailAndPassword(auth, savedEmail, savedPassword);
+            if (userCredential.user) {
+              navigation.navigate('Home');
+            }
+          } catch (error) {
+            console.error('Auto login error:', error);
+            await AsyncStorage.removeItem('userEmail');
+            await AsyncStorage.removeItem('userPassword');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking login state:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkLoginState();
+  }, []);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      setErrorMessage('กรุณากรอก Email และ Password');
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('แจ้งเตือน', 'กรุณากรอกอีเมลและรหัสผ่าน');
       return;
     }
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigation.replace('Home');
+      setIsLoading(true);
+      setErrorMessage('');
+      
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      if (userCredential.user) {
+        await AsyncStorage.setItem('userEmail', email);
+        await AsyncStorage.setItem('userPassword', password);
+        navigation.navigate('Home');
+      }
     } catch (error) {
-      console.log('Login error:', error.code);
+      console.error('Error logging in:', error);
+      let errorMessage = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
       
       switch (error.code) {
         case 'auth/invalid-email':
-          setErrorMessage('รูปแบบอีเมลไม่ถูกต้อง');
+          errorMessage = 'รูปแบบอีเมลไม่ถูกต้อง';
           break;
         case 'auth/user-not-found':
-          setErrorMessage('ไม่พบบัญชีผู้ใช้นี้');
+          errorMessage = 'ไม่พบบัญชีผู้ใช้นี้';
           break;
         case 'auth/wrong-password':
-          setErrorMessage('รหัสผ่านไม่ถูกต้อง');
+          errorMessage = 'รหัสผ่านไม่ถูกต้อง';
           break;
         case 'auth/too-many-requests':
-          setErrorMessage('คุณลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่');
+          errorMessage = 'คุณลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่';
           break;
-        default:
-          setErrorMessage('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
       }
+      
+      setErrorMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      await AsyncStorage.removeItem('userEmail');
+      await AsyncStorage.removeItem('userPassword');
+      navigation.replace('Login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถออกจากระบบได้ กรุณาลองใหม่อีกครั้ง');
     }
   };
 
@@ -136,59 +189,65 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.content}>
           <Text style={styles.title}>เข้าสู่ระบบ</Text>
           
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>อีเมล</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="กรอกอีเมล"
-              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                setErrorMessage('');
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#00B900" />
+          ) : (
+            <>
+              {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>อีเมล</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="กรอกอีเมล"
+                  placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setErrorMessage('');
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
 
-          <View style={styles.passwordContainer}>
-            <Text style={styles.label}>รหัสผ่าน</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="กรอกรหัสผ่าน"
-              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setErrorMessage('');
-              }}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <MaterialIcons
-                name={showPassword ? 'visibility' : 'visibility-off'}
-                size={24}
-                color={isDarkMode ? '#FFFFFF' : '#666666'}
-              />
-            </TouchableOpacity>
-          </View>
+              <View style={styles.passwordContainer}>
+                <Text style={styles.label}>รหัสผ่าน</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="กรอกรหัสผ่าน"
+                  placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setErrorMessage('');
+                  }}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  style={styles.eyeIcon}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <MaterialIcons
+                    name={showPassword ? 'visibility' : 'visibility-off'}
+                    size={24}
+                    color={isDarkMode ? '#FFFFFF' : '#666666'}
+                  />
+                </TouchableOpacity>
+              </View>
 
-          <TouchableOpacity style={styles.button} onPress={handleLogin}>
-            <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
-          </TouchableOpacity>
+              <TouchableOpacity style={styles.button} onPress={handleLogin}>
+                <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.registerButton} 
-            onPress={() => navigation.navigate('Register')}
-          >
-            <Text style={styles.registerButtonText}>สมัครสมาชิก</Text>
-          </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.registerButton} 
+                onPress={() => navigation.navigate('Register')}
+              >
+                <Text style={styles.registerButtonText}>สมัครสมาชิก</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

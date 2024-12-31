@@ -165,6 +165,7 @@ export default function ChatbotScreen({ navigation }) {
   const [hasMore, setHasMore] = useState(true);
   const [pinnedMessage, setPinnedMessage] = useState(null);
   const [timers, setTimers] = useState({});
+  const [isOnline, setIsOnline] = useState(true);
 
   // สร้าง styles ด้วย useMemo
   const styles = useMemo(() => ({
@@ -425,49 +426,82 @@ export default function ChatbotScreen({ navigation }) {
       borderRadius: 20,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
+    offlineText: {
+      fontSize: 12,
+      color: isDarkMode ? '#FF6B6B' : '#FF4444',
+      marginTop: 2,
+    },
   }), [isDarkMode]);
 
-  // ดึงข้อความเมื่อ component โหลด
+  // เพิ่มฟังก์ชันโหลดข้อความจาก AsyncStorage
+  const loadOfflineMessages = async () => {
+    try {
+      const offlineMessages = await AsyncStorage.getItem(`messages_${route.params?.chatId}`);
+      if (offlineMessages) {
+        setMessages(JSON.parse(offlineMessages));
+      }
+    } catch (error) {
+      console.error('Error loading offline messages:', error);
+    }
+  };
+
+  // เพิ่มฟังก์ชันบันทึกข้อความลง AsyncStorage
+  const saveOfflineMessages = async (newMessages) => {
+    try {
+      await AsyncStorage.setItem(
+        `messages_${route.params?.chatId}`,
+        JSON.stringify(newMessages)
+      );
+    } catch (error) {
+      console.error('Error saving offline messages:', error);
+    }
+  };
+
+  // แก้ไขฟังก์ชันตึงข้อความจาก Firestore
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser || !route.params?.chatId) return;
 
-    const messagesRef = collection(db, 'chats');
-    const q = query(
-      messagesRef,
-      where('userId', '==', currentUser.uid),
-      where('chatId', '==', route.params.chatId),
-      where('type', '==', 'message'),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
+    // ตรวจสอบการเชื่อมต่อ
+    const checkConnectivity = async () => {
+      const isConnected = await checkConnection();
+      setIsOnline(isConnected);
+      
+      if (isConnected) {
+        // ถ้าออนไลน์ ดึงข้อความจาก Firestore
+        const messagesRef = collection(db, 'chats');
+        const q = query(
+          messagesRef,
+          where('userId', '==', currentUser.uid),
+          where('chatId', '==', route.params.chatId),
+          where('type', '==', 'message'),
+          orderBy('createdAt', 'desc'),
+          limit(20)
+        );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const messageList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setMessages(messageList);
-    });
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const messageList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setMessages(messageList);
+          // บันทึกข้อความลง AsyncStorage
+          saveOfflineMessages(messageList);
+        });
 
-    return () => {
-      unsubscribe();
-      // ท้างเฉพาะสถานะการพิมพ์
-      setInput('');
-      setIsTyping(false);
-    };
-  }, [route.params?.chatId]);
-
-  useEffect(() => {
-    const saveMessages = async () => {
-      try {
-        await AsyncStorage.setItem('messages', JSON.stringify(messages));
-      } catch (error) {
-        console.error('Error saving messages:', error);
+        return () => {
+          unsubscribe();
+          setInput('');
+          setIsTyping(false);
+        };
+      } else {
+        // ถ้าออฟไลน์ โหลดข้อความจาก AsyncStorage
+        loadOfflineMessages();
       }
     };
-    saveMessages();
-  }, [messages]);
+
+    checkConnectivity();
+  }, [route.params?.chatId]);
 
   const getChatGPTResponse = async (userMessage) => {
     try {
@@ -844,41 +878,59 @@ export default function ChatbotScreen({ navigation }) {
       }
     }
 
-    const messagesRef = collection(db, 'chats');
     const now = new Date();
+    const userMessage = {
+      id: Date.now().toString(),
+      text: input,
+      sender: 'user',
+      timestamp: now.toISOString(),
+      createdAt: now.getTime(),
+      userId: currentUser.uid,
+      chatId: route.params.chatId,
+      type: 'message'
+    };
 
     try {
-      // เก็บข้อความของผู้ใช้
-      const userMessage = {
-        text: input,
-        sender: 'user',
-        timestamp: now.toISOString(),
-        createdAt: now.getTime(),
-        userId: currentUser.uid,
-        chatId: route.params.chatId,
-        type: 'message'
-      };
+      if (isOnline) {
+        // ถ้าออนไลน์ ส่งข้อความไปยัง Firestore
+        const messagesRef = collection(db, 'chats');
+        await addDoc(messagesRef, userMessage);
+        setInput('');
+        setIsTyping(true);
 
-      await addDoc(messagesRef, userMessage);
-      setInput('');
-      setIsTyping(true);
+        const botResponse = useGPT ? 
+          await getChatGPTResponse(input) : 
+          getSimpleResponse(input);
 
-      // ต่งข้อความตอบกลับ
-      const botResponse = useGPT ? 
-        await getChatGPTResponse(input) : 
-        getSimpleResponse(input);
+        const botMessage = {
+          text: botResponse,
+          sender: 'bot',
+          timestamp: new Date().toISOString(),
+          createdAt: new Date().getTime(),
+          userId: currentUser.uid,
+          chatId: route.params.chatId,
+          type: 'message'
+        };
 
-      const botMessage = {
-        text: botResponse,
-        sender: 'bot',
-        timestamp: new Date().toISOString(),
-        createdAt: new Date().getTime(),
-        userId: currentUser.uid,
-        chatId: route.params.chatId,
-        type: 'message'
-      };
-
-      await addDoc(messagesRef, botMessage);
+        await addDoc(messagesRef, botMessage);
+      } else {
+        // ถ้าออฟไลน์ เก็บข้อความไว้ใน AsyncStorage
+        setMessages(prevMessages => {
+          const newMessages = [userMessage, {
+            id: (Date.now() + 1).toString(),
+            text: getSimpleResponse(input),
+            sender: 'bot',
+            timestamp: new Date().toISOString(),
+            createdAt: new Date().getTime(),
+            userId: currentUser.uid,
+            chatId: route.params.chatId,
+            type: 'message'
+          }, ...prevMessages];
+          saveOfflineMessages(newMessages);
+          return newMessages;
+        });
+        setInput('');
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       Alert.alert('ข้อผิดพลาด', 'ไม่สามารถส่งข้อความได้ กรุณาลองใหม่อีกครั้ง');
@@ -1109,7 +1161,6 @@ export default function ChatbotScreen({ navigation }) {
     Alert.alert('ข้อผิดพลาด', customMessage);
   };
 
-  // ฟังก์ชันตรวจสอบการเชื่อมต่อ
   const checkConnection = async () => {
     try {
       const response = await fetch('https://www.google.com');
@@ -1215,9 +1266,16 @@ export default function ChatbotScreen({ navigation }) {
             >
               <MaterialIcons name="arrow-back" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>
-              {chatTitle}
-            </Text>
+            <View>
+              <Text style={styles.headerTitle}>
+                {chatTitle}
+              </Text>
+              {!isOnline && (
+                <Text style={styles.offlineText}>
+                  ออฟไลน์ - โหมดอ่านอย่างเดียว
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity 
