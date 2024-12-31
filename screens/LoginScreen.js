@@ -93,8 +93,8 @@ export default function LoginScreen({ navigation }) {
     eyeIcon: {
       position: 'absolute',
       right: 12,
-      top: '50%',
-      transform: [{ translateY: -12 }],
+      top: 40,
+      zIndex: 1,
     },
     errorText: {
       color: '#FF3B30',
@@ -172,7 +172,7 @@ export default function LoginScreen({ navigation }) {
               onPress={() => setShowPassword(!showPassword)}
             >
               <MaterialIcons
-                name={showPassword ? 'visibility-off' : 'visibility'}
+                name={showPassword ? 'visibility' : 'visibility-off'}
                 size={24}
                 color={isDarkMode ? '#FFFFFF' : '#666666'}
               />

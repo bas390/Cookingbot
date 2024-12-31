@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Swipeable } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, database, dbRef } from '../firebase';
-import { ref, query, orderByChild, onValue } from 'firebase/database';
+import { ref, query, orderByChild, onValue, set, update, remove } from 'firebase/database';
 import { addDoc, collection, deleteDoc, doc } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { signOut } from 'firebase/auth';
@@ -32,28 +32,27 @@ export default function HomeScreen({ navigation }) {
 
   // โหลดข้อมูลแชทจาก AsyncStorage
   useEffect(() => {
-    const loadChats = async () => {
-      try {
-        const savedChats = await AsyncStorage.getItem('chats');
-        if (savedChats) setChats(JSON.parse(savedChats));
-      } catch (error) {
-        console.error('Error loading chats:', error);
-      }
-    };
-    loadChats();
-  }, []);
+    const user = auth.currentUser;
+    if (!user) return;
 
-  // บันทึกข้อมูลแชทลง AsyncStorage
-  useEffect(() => {
-    const saveChats = async () => {
-      try {
-        await AsyncStorage.setItem('chats', JSON.stringify(chats));
-      } catch (error) {
-        console.error('Error saving chats:', error);
+    const chatsRef = ref(database, `${dbRef.userChats}/${user.uid}`);
+    const chatsQuery = query(chatsRef, orderByChild('createdAt'));
+
+    const unsubscribe = onValue(chatsQuery, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const chatsArray = Object.entries(data).map(([id, chat]) => ({
+          id,
+          ...chat
+        }));
+        setChats(chatsArray.reverse());
+      } else {
+        setChats([]);
       }
-    };
-    saveChats();
-  }, [chats]);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // ฟังก์ชันเพิ่มแชทใหม่
   const handleAddChat = () => {
@@ -61,16 +60,27 @@ export default function HomeScreen({ navigation }) {
       Alert.alert('แจ้งเตือน', 'กรุณาใส่ชื่อแชท');
       return;
     }
-    const newChat = { 
-      id: generateUniqueId(), 
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const newChatRef = ref(database, `${dbRef.userChats}/${user.uid}/${generateUniqueId()}`);
+    const newChat = {
       title: newChatName.trim(),
       createdAt: new Date().toISOString(),
       lastMessage: 'เริ่มต้นสนทนาใหม่',
       lastMessageTime: new Date().toISOString()
     };
-    setChats([newChat, ...chats]);
-    setNewChatName('');
-    setModalVisible(false);
+
+    set(newChatRef, newChat)
+      .then(() => {
+        setNewChatName('');
+        setModalVisible(false);
+      })
+      .catch((error) => {
+        console.error('Error adding chat:', error);
+        Alert.alert('ข้อผิดพลาด', 'ไม่สามารถสร้างแชทได้ กรุณาลองใหม่');
+      });
   };
 
   // ฟังก์ชันแก้ไขชื่อแชท
@@ -79,13 +89,20 @@ export default function HomeScreen({ navigation }) {
       Alert.alert('แจ้งเตือน', 'กรุณาใส่ชื่อแชท');
       return;
     }
-    setChats((prevChats) =>
-      prevChats.map((chat) =>
-        chat.id === editingChat.id ? { ...chat, title: newChatName.trim() } : chat
-      )
-    );
-    setEditingChat(null);
-    setNewChatName('');
+
+    const user = auth.currentUser;
+    if (!user || !editingChat) return;
+
+    const chatRef = ref(database, `${dbRef.userChats}/${user.uid}/${editingChat.id}`);
+    update(chatRef, { title: newChatName.trim() })
+      .then(() => {
+        setEditingChat(null);
+        setNewChatName('');
+      })
+      .catch((error) => {
+        console.error('Error updating chat:', error);
+        Alert.alert('ข้อผิดพลาด', 'ไม่สามารถแก้ไขแชทได้ กรุณาลองใหม่');
+      });
   };
 
   // ฟังก์ชันลบแชท
@@ -95,9 +112,19 @@ export default function HomeScreen({ navigation }) {
       'คุณต้องการลบแชทนี้ใช่หรือไม่?',
       [
         { text: 'ยกเลิก', style: 'cancel' },
-        { 
-          text: 'ลบ', 
-          onPress: () => setChats(chats.filter((chat) => chat.id !== chatId)),
+        {
+          text: 'ลบ',
+          onPress: () => {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const chatRef = ref(database, `${dbRef.userChats}/${user.uid}/${chatId}`);
+            remove(chatRef)
+              .catch((error) => {
+                console.error('Error deleting chat:', error);
+                Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่');
+              });
+          },
           style: 'destructive'
         },
       ]
