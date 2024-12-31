@@ -335,91 +335,94 @@ export default function HomeScreen({ navigation }) {
       fontSize: 16,
       fontWeight: '600',
     },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    iconButton: {
+      padding: 8,
+      marginLeft: 8,
+    },
   });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>แชท</Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity onPress={toggleTheme}>
-              <MaterialIcons 
-                name={isDarkMode ? "light-mode" : "dark-mode"} 
-                size={24} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.logoutButton} 
-              onPress={handleLogout}
-            >
-              <MaterialIcons 
-                name="logout" 
-                size={24} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
-              />
-            </TouchableOpacity>
-          </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? '#121212' : '#FFFFFF' }]}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.title, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
+            Cooking Bot
+          </Text>
         </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <MaterialIcons 
+              name="account-circle" 
+              size={28} 
+              color={isDarkMode ? '#FFFFFF' : '#000000'} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-        {chats.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="chat-bubble-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>ยังไม่มีแชท</Text>
-            <Text style={styles.emptySubtext}>แตะปุ่ม + เพื่อเริ่มแชทใหม่</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={chats}
-            keyExtractor={(item) => item.id}
-            renderItem={renderChatItem}
-            contentContainerStyle={styles.chatList}
-          />
-        )}
+      {chats.length === 0 ? (
+        <View style={styles.emptyState}>
+          <MaterialIcons name="chat-bubble-outline" size={64} color="#ccc" />
+          <Text style={styles.emptyText}>ยังไม่มีแชท</Text>
+          <Text style={styles.emptySubtext}>แตะปุ่ม + เพื่อเริ่มแชทใหม่</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={chats}
+          keyExtractor={(item) => item.id}
+          renderItem={renderChatItem}
+          contentContainerStyle={styles.chatList}
+        />
+      )}
 
-        <TouchableOpacity 
-          style={styles.addButton} 
-          onPress={() => setModalVisible(true)}
-        >
-          <MaterialIcons name="add" size={32} color="#FFF" />
-        </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.addButton} 
+        onPress={() => setModalVisible(true)}
+      >
+        <MaterialIcons name="add" size={32} color="#FFF" />
+      </TouchableOpacity>
 
-        <Modal visible={modalVisible || !!editingChat} transparent animationType="slide">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                {editingChat ? 'Edit Chat' : 'New Chat'}
-              </Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter chat name"
-                value={newChatName}
-                onChangeText={setNewChatName}
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalButton}
-                  onPress={editingChat ? handleEditChat : handleAddChat}
-                >
-                  <Text style={styles.modalButtonText}>
-                    {editingChat ? 'Save' : 'Add'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => {
-                    setModalVisible(false);
-                    setEditingChat(null);
-                  }}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
+      <Modal visible={modalVisible || !!editingChat} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {editingChat ? 'Edit Chat' : 'New Chat'}
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter chat name"
+              value={newChatName}
+              onChangeText={setNewChatName}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={editingChat ? handleEditChat : handleAddChat}
+              >
+                <Text style={styles.modalButtonText}>
+                  {editingChat ? 'Save' : 'Add'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setModalVisible(false);
+                  setEditingChat(null);
+                }}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

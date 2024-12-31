@@ -18,7 +18,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs, doc, orderBy, startAfter, limit } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs, doc, orderBy, startAfter, limit, getDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { OPENAI_API_KEY } from '@env';
 import axios from 'axios';
@@ -81,8 +81,6 @@ const BotTyping = () => {
       maxWidth: '80%',
       padding: 12,
       borderRadius: 16,
-      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
-      borderTopLeftRadius: 4,
     },
     botText: {
       color: isDarkMode ? '#FFFFFF' : '#000000',
@@ -175,6 +173,7 @@ export default function ChatbotScreen({ navigation }) {
   const { isDarkMode, toggleTheme } = useTheme();
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [pinnedMessages, setPinnedMessages] = useState([]);
 
   // สร้าง dynamic styles ภายใน component
   const styles = StyleSheet.create({
@@ -213,11 +212,11 @@ export default function ChatbotScreen({ navigation }) {
     headerButtons: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 16,
+      gap: 8,
     },
     headerButton: {
       padding: 8,
-      borderRadius: 8,
+      borderRadius: 20,
     },
     headerButtonText: {
       color: '#FFFFFF',
@@ -226,6 +225,7 @@ export default function ChatbotScreen({ navigation }) {
     },
     headerThemeButton: {
       padding: 8,
+      borderRadius: 20,
     },
     inputContainer: {
       borderTopWidth: 1,
@@ -261,9 +261,10 @@ export default function ChatbotScreen({ navigation }) {
       backgroundColor: '#666666',
     },
     messageBubble: {
-      maxWidth: '80%',
-      padding: 12,
-      borderRadius: 16,
+      maxWidth: '75%',
+      padding: 16,
+      borderRadius: 20,
+      minWidth: 120,
     },
     userBubble: {
       backgroundColor: '#00B900',
@@ -276,6 +277,7 @@ export default function ChatbotScreen({ navigation }) {
     botText: {
       color: isDarkMode ? '#FFFFFF' : '#000000',
       fontSize: 16,
+      lineHeight: 24,
     },
     avatarContainer: {
       width: 36,
@@ -319,6 +321,98 @@ export default function ChatbotScreen({ navigation }) {
       color: isDarkMode ? '#999999' : '#666666',
       fontSize: 14,
     },
+    messageHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    pinButton: {
+      padding: 4,
+    },
+    pinnedMessage: {
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+      borderRadius: 8,
+      padding: 8,
+      marginVertical: 2,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    iconButton: {
+      padding: 8,
+      marginLeft: 8,
+    },
+    timerControls: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 12,
+      gap: 12,
+    },
+    timerButton: {
+      flex: 1,
+      backgroundColor: '#00B900',
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      alignItems: 'center',
+      minWidth: 100,
+    },
+    timerButtonActive: {
+      backgroundColor: '#FF5722',
+    },
+    timerButtonDisabled: {
+      backgroundColor: '#666666',
+    },
+    timerButtonText: {
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+      fontSize: 15,
+      textAlign: 'center',
+    },
+    timerText: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginVertical: 12,
+      textAlign: 'center',
+    },
+    timerControlsContainer: {
+      marginTop: 8,
+      marginBottom: 8,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+    },
+    timerControls: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      marginTop: 8,
+      gap: 12,
+    },
+    timerButton: {
+      backgroundColor: '#00B900',
+      paddingVertical: 10,
+      paddingHorizontal: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      minWidth: 100,
+    },
+    timerButtonActive: {
+      backgroundColor: '#FF5722',
+    },
+    timerButtonText: {
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+      fontSize: 15,
+      textAlign: 'center',
+    },
+    timerText: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      textAlign: 'center',
+    },
   });
 
   // ดึงข้อความเมื่อ component โหลด
@@ -326,30 +420,25 @@ export default function ChatbotScreen({ navigation }) {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
 
-    const loadMessages = async () => {
-      try {
         const messagesRef = collection(db, 'chats');
         const q = query(
           messagesRef,
-          where('userId', '==', currentUser.uid)
-        );
-        
-        const snapshot = await getDocs(q);
-        const messageList = snapshot.docs
-          .map(doc => ({
+      where('userId', '==', currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    // ใช้ onSnapshot แทน getDocs เพื่อรับการอัพเดทแบบเรียลไทม์
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const messageList = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
-          }))
-          .sort((a, b) => b.createdAt - a.createdAt);
-        
+      }));
         setMessages(messageList);
-      } catch (error) {
-        console.error('Error loading messages:', error);
-      }
-    };
+    });
 
-    loadMessages();
-  }, []); // ลบ chatId ออกจาก dependencies
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const saveMessages = async () => {
@@ -404,37 +493,287 @@ export default function ChatbotScreen({ navigation }) {
     }
   };
 
-  const getSimpleResponse = (userMessage) => {
-    const message = userMessage.toLowerCase();
-    
-    // อาหารประเภทต้ม/แกง
-    if (message.includes('ต้มยำ')) {
-      return 'ต้มยำกุ้งมีส่วนประกอบหลักคือ\n1. กุ้ง\n2. เห็ด\n3. ข่า ตะไคร้ ใบมะกรูด\n4. พริกขี้หนู\n5. มะนาว\n\nวิธีทำ:\n1. ต้มน้ำให้เดือด ใส่ข่า ตะไคร้ ใบมะกรูด\n2. ใส่เห็ด รอสักครู่\n3. ใส่กุ้ง รอจนกุ้งสุก\n4. ปรุงรสด้วยน้ำปลา น้ำมะนาว พริก\n5. โรยผักชี พร้อมเสิร์ฟ';
-    } 
-    else if (message.includes('แกงเขียวหวาน')) {
-      return 'แกงเขียวหวานไก่ มีส่วนประกอบ:\n1. เนื้อไก่\n2. มะเขือพวง มะเขือเปราะ\n3. พริกแกงเขียวหวาน\n4. กะทิ\n5. ใบโหระพา\n\nวิธีทำ:\n1. ผัดพริกแกงกับหัวกะทิจนหอม\n2. ใส่เนื้อไก่ผัดให้สุก\n3. เติมกะทิ ต้มจนเดือด\n4. ใส่มะเขือ ปรุงรส\n5. ใส่ใบโหระพา พร้อมเสิร์ฟ';
-    }
-    
-    // อาหารประเภทผัด
-    else if (message.includes('ผัดกะเพรา')) {
-      return 'ผัดกะเพรามีส่วนประกอบ:\n1. เนื้อสัตว์ (หมูสับ/ไก่สับ)\n2. กระเทียม พริก\n3. ใบกะเพรา\n\nวิธีทำ:\n1. ผัดกระเทียมพริกให้หอม\n2. ใส่เนื้อสัตว์ผัดให้สุก\n3. ปรุงรสด้วยน้ำปลา น้ำมันหอย\n4. ใส่ใบกะเพราผัดให้เข้ากัน\n5. เสิร์ฟพร้อมข้าวและไข่ดาว';
-    }
-    else if (message.includes('ผัดไทย')) {
-      return 'ผัดไทยมีส่วนประกอบ:\n1. เส้นจันท์\n2. ไข่ กุ้งแห้ง เต้าหู้\n3. ถั่วงอก ใบกุยช่าย\n4. ซอสผัดไทย\n\nวิธีทำ:\n1. แช่เส้นจนนุ่ม\n2. ผัดกุ้งแห้ง เต้าหู้ ไข่\n3. ใส่เส้น ผัดให้เข้ากัน\n4. ปรุงรสด้วยซอสผัดไทย\n5. ใส่ถั่วงอก ใบกุยช่าย\n6. เสิร์ฟพร้อมถั่วป่น มะนาว';
+  const getSimpleResponse = (message) => {
+    const lowerMessage = message.toLowerCase();
+
+    // การจับเวลา
+    if (lowerMessage.includes('จับเวลา') || lowerMessage.match(/^\d+$/)) {
+      const timeMatch = lowerMessage.match(/\d+/);
+      if (timeMatch) {
+        const minutes = parseInt(timeMatch[0]);
+        return `⏰ ตั้งเวลา ${minutes} นาที
+
+เวลาที่เหลือ: ${minutes}:00
+
+[เริ่มจับเวลา]  [หยุด]  [รีเซ็ต]
+
+หมายเหตุ: กดปุ่ม "เริ่มจับเวลา" เพื่อเริ่มนับถอยหลัง
+เมื่อครบเวลา บอทจะส่งข้อความแจ้งเตือน`;
+      }
     }
 
-    // อาหารประเภทยำ
-    else if (message.includes('ส้มตำ')) {
-      return 'ส้มตำไทยมีส่วนประกอบ:\n1. มะละกอเส้น\n2. มะเขือเทศ\n3. ถั่วฝักยาว\n4. กุ้งแห้ง\n5. พริก กระเทียม\n\nวิธีทำ:\n1. ตำพริกกระเทียม\n2. ใส่มะเขือเทศ ถั่วฝักยาว\n3. ใส่มะละกอ ตำเบาๆ\n4. ปรุงรสด้วยน้ำปลา มะนาว น้ำตาล\n5. คลุกเคล้าให้เข้ากัน';
+    // เมนูต้มไข่
+    if (lowerMessage.includes('ต้มไข่')) {
+      return `วิธีทำไข่ต้มมีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - ไข่ไก่
+   - น้ำเปล่า
+   - เกลือ (ถ้าต้องการ)
+
+2. วิธีทำ:
+   - ต้มน้ำให้เดือด
+   - ใส่ไข่ลงไปต้ม
+   ⏰ ระยะเวลาต้ม:
+   - ไข่ไก่ลวก (ไข่แดงเหลว): 3 นาที
+   - ไข่ไก่ต้มไข่แดงยางมะตูม: 5 นาที
+   - ไข่ไก่ต้มสุก: 7 นาที
+
+เคล็ดลับ:
+- ใส่เกลือเล็กน้อยจะช่วยให้ปอกเปลือกง่าย
+- แช่ในน้ำเย็นทันทีเพื่อให้ปอกเปลือกง่าย
+
+⏱️ ต้องการจับเวลาไหมคะ? 
+พิมพ์ตัวเลขนาทีที่ต้องการ:
+"3" สำหรับไข่ลวก
+"5" สำหรับไข่ยางมะตูม
+"7" สำหรับไข่ต้มสุก`;
     }
 
-    // อาหารประเภทของหวาน
-    else if (message.includes('มะม่วงข้าวเหนียว')) {
-      return 'มะม่วงข้าวเหนียวมีส่วนประกอบ:\n1. ข้าวเหนียว\n2. มะม่วงสุก\n3. กะทิ\n4. น้ำตาล เกลือ\n\nวิธีทำ:\n1. แช่ข้าวเหนียว นึ่งให้สุก\n2. ผสมกะทิกับน้ำตาล เกลือ\n3. ราดกะทิลงบนข้าวเหนียว\n4. เสิร์ฟพร้อมมะม่วงสุก';
+    // เมนูต้มยำ
+    if (lowerMessage.includes('ต้มยำ')) {
+      return `วิธีทำต้มยำมีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - น้ำซุปหรือน้ำเปล่า 2 ถ้วย
+   - ข่า ตะไคร้ ใบมะกรูด พริกขี้หนู
+   - เห็ด กุ้ง หรือไก่ตามชอบ
+   - น้ำพริกเผา น้ำปลา มะนาว
+   - ผักชี ต้นหอม
+
+2. วิธีทำ:
+   - ต้มน้ำให้เดือด ใส่ข่า ตะไคร้ ใบมะกรูด (⏰ 5 นาที)
+   - ใส่เห็ดหรือเนื้อสัตว์ที่เตรียมไว้ (⏰ 3-5 นาที)
+   - ปรุงรสด้วยน้ำพริกเผา น้ำปลา
+   - เมื่อสุกใส่มะนาว ผักชี ต้นหอม
+
+เคล็ดลับ: 
+- ใส่น้ำพริกเผาก่อนมะนาวเพื่อให้รสชาติกลมกล่อม
+- ไม่ต้มนานเกินไปเพื่อให้ผักยังกรอบอยู่
+
+⏱️ ต้องการจับเวลาไหมคะ?
+พิมพ์ "จับเวลา 5 นาที" สำหรับต้มเครื่องต้มยำ
+พิมพ์ "จับเวลา 3 นาที" สำหรับต้มกุ้ง/เห็ด`;
+    }
+
+    // เมนูแกงเขียวหวาน
+    if (lowerMessage.includes('แกงเขียวหวาน')) {
+      return `วิธีทำแกงเขียวหวานมีดังนี้:
+
+1. เตรียมเครื่องแกง:
+   - พริกเขียว หอมแดง ข่า ตะไคร้
+   - กระเทียม ผิวมะกรูด รากผักชี
+   - ลูกผักชี ยี่หร่า พริกไทย กะปิ
+
+2. วิธีทำ:
+   - โขลกเครื่องแกงให้ละเอียด
+   - ผัดเครื่องแกงกับหัวกะทิจนหอม
+   - ใส่เนื้อไก่หรือเนื้อสัตว์ที่เตรียมไว้
+   - เติมน้ำกะทิ ใส่มะเขือ พริกชี้ฟ้า
+   - ปรุงรสด้วยน้ำปลา น้ำตาล ใบโหระพา
+
+เคล็ดลับ:
+- แยกกะทิเป็นหัวกะทิและหางกะทิ
+- ผัดเครื่องแกงจนมีกลิ่นหอมก่อนใส่กะทิ
+- ใส่ใบโหระพาตอนใกล้ปิดไฟ
+
+ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
+    }
+
+    // เมนูผัดกะเพรา
+    if (lowerMessage.includes('ผัดกะเพรา')) {
+      return `วิธีทำผัดกะเพรามีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - เนื้อหมูสับ/ไก่สับ/เนื้อสับ
+   - กระเทียม พริกขี้หนูสด
+   - ใบกะเพรา น้ำมัน
+   - ซอสปรุงรส น้ำปลา น้ำตาล
+
+2. วิธีทำ:
+   - โขลกกระเทียมและพริกให้แหลก
+   - ตั้งกระทะใส่น้ำมัน ผัดกระเทียมพริก
+   - ใส่เนื้อสับลงผัด
+   - ปรุงรสด้วยน้ำปลา น้ำตาล
+   - ใส่ใบกะเพราผัดให้เข้ากัน
+
+เคล็ดลับ:
+- ใช้ไฟแรงในการผัด
+- ใส่ใบกะเพราตอนท้าย
+- ไม่ต้องใส่น้ำ จะได้รสชาติที่เข้มข้น
+
+ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
+    }
+
+    // เมนูผัดไทย
+    if (lowerMessage.includes('ผัดไทย')) {
+      return `วิธีทำผัดไทยมีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - เส้นจันท์แช่น้ำ
+   - ไข่ กุ้งแห้ง เต้าหู้
+   - ถั่วงอก ใบกุยช่าย
+   - น้ำตาลปี๊บ น้ำปลา น้ำมะขาม
+   - ถั่วลิสงป่น พริกป่น
+
+2. วิธีทำ:
+   - ผัดเส้นกับน้ำปรุงรสให้นุ่ม
+   - ตอกไข่ลงผัดให้สุก
+   - ใส่ถั่วงอก ใบกุยช่าย
+   - โรยหน้าด้วยถั่วลิสงป่น
+
+เคล็ดลับ:
+- แช่เส้นให้นุ่มพอดี ไม่เละ
+- ผัดเส้นให้แห้ง ไม่เหนียวติดกัน
+- ปรุงรสให้ได้ความหวาน เค็ม เปรี้ยว สมดุล
+
+ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
+    }
+
+    // เมนูส้มตำ
+    if (lowerMessage.includes('ส้มตำ')) {
+      return `วิธีทำส้มตำมีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - มะละกอเขียวขูด
+   - มะเขือเทศ กระเทียม พริกสด
+   - ถั่วฝักยาว กุ้งแห้ง
+   - น้ำปลา น้ำตาล มะนาว
+   - ถั่วลิสงคั่ว
+
+2. วิธีทำ:
+   - ตำกระเทียม พริกให้แหลก
+   - ใส่มะเขือเทศ ถั่วฝักยาว
+   - ใส่มะละกอ ปรุงรส คลุกเคล้า
+   - โรยหน้าด้วยถั่วลิสงคั่ว
+
+เคล็ดลับ:
+- เลือกมะละกอเขียวแก่ ขูดเป็นเส้นยาว
+- ปรุงรสให้เปรี้ยวนำ เค็มตาม หวานเล็กน้อย
+- ตำเบาๆ ไม่ให้มะละกอเละ
+
+ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
+    }
+
+    // เมนูมะม่วงข้าวเหนียว
+    if (lowerMessage.includes('มะม่วงข้าวเหนียว')) {
+      return `วิธีทำมะม่วงข้าวเหนียวมีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - ข้าวเหนียว
+   - มะม่วงสุก
+   - กะทิ น้ำตาล เกลือ
+   - งาคั่ว
+
+2. วิธีทำ:
+   - แช่ข้าวเหนียว 4-6 ชั่วโมง
+   - นึ่งข้าวเหนียวให้สุก
+   - ทำกะทิ: ผสมกะทิ น้ำตาล เกลือ
+   - ราดกะทิลงบนข้าวเหนียว
+   - เสิร์ฟพร้อมมะม่วงสุก
+
+เคล็ดลับ:
+- เลือกมะม่วงสุกหวานหอม
+- นึ่งข้าวเหนียวให้สุกนุ่มพอดี
+- ราดกะทิตอนข้าวยังอุ่นๆ
+
+ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
     }
 
     // ถ้าไม่ตรงกับเงื่อนไขใดๆ
-    return 'สวัสดีค่ะ ดิฉันสามารถแนะนำวิธีทำอาหารไทยยอดนิยมได้แก่:\n1. ต้มยำ\n2. แกงเขียวหวาน\n3. ผัดกะเพรา\n4. ผัดไทย\n5. ส้มตำ\n6. มะม่วงข้าวเหนียว\n\nกรุณาพิมพ์ชื่ออาหารที่ต้องการทราบวิธีทำค่ะ';
+    return 'สวัสดีค่ะ ดิฉันสามารถแนะนำวิธีทำอาหารไทยยอดนิยมได้แก่:\n1. ต้มยำ\n2. แกงเขียวหวาน\n3. ผัดกะเพรา\n4. ผัดไทย\n5. ส้มตำ\n6. มะม่วงข้าวเหนียว\n7. ต้มไข่\n\nกรุณาพิมพ์ชื่ออาหารที่ต้องการทราบวิธีทำค่ะ';
+  };
+
+  const handleTimerMessage = async (minutes) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    const messagesRef = collection(db, 'chats');
+
+    try {
+      // สร้างข้อความตั้งเวลาใหม่
+      const newTimerMessage = {
+        text: `⏰ ตั้งเวลา ${minutes} นาที`,
+        sender: 'bot',
+        timestamp: new Date().toLocaleTimeString(),
+        createdAt: new Date().getTime(),
+        userId: currentUser.uid,
+        isTimer: true,
+        initialTime: minutes,
+        timeLeft: minutes * 60,
+        isTimerRunning: false
+      };
+
+      // เพิ่มข้อความลง Firestore
+      const docRef = await addDoc(messagesRef, newTimerMessage);
+
+      // เริ่มการอัพเดทเวลา
+      const updateTimer = async () => {
+        const messageDoc = await getDoc(docRef);
+        if (!messageDoc.exists()) return;
+
+        const messageData = messageDoc.data();
+        if (!messageData.isTimerRunning) return;
+
+        const timeLeft = messageData.timeLeft - 1;
+        if (timeLeft <= 0) {
+          await updateDoc(docRef, {
+            text: `⏰ ครบ ${minutes} นาทีแล้วค่ะ!\nสามารถนำอาหารออกได้แล้วค่ะ 🍳`,
+            isTimerRunning: false,
+            timeLeft: 0
+          });
+          return;
+        }
+
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        const timeString = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+        await updateDoc(docRef, {
+          timeLeft: timeLeft,
+          text: `⏰ ตั้งเวลา ${minutes} นาที`
+        });
+      };
+
+      // ตั้งค่า interval สำหรับอัพเดทเวลา
+      let timerId = null;
+
+      // เริ่มฟังการเปลี่ยนแปลงของข้อความ
+      const unsubscribe = onSnapshot(docRef, (doc) => {
+        const data = doc.data();
+        if (data?.isTimerRunning) {
+          if (!timerId) {
+            timerId = setInterval(updateTimer, 1000);
+          }
+        } else {
+          if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+          }
+        }
+      });
+
+      // Cleanup function
+      return () => {
+        if (timerId) {
+          clearInterval(timerId);
+        }
+        unsubscribe();
+      };
+
+    } catch (error) {
+      console.error('Error handling timer:', error);
+    }
   };
 
   const handleSend = async () => {
@@ -462,6 +801,12 @@ export default function ChatbotScreen({ navigation }) {
       setInput('');
       setIsTyping(true);
 
+      // ตรวจสอบว่าเป็นคำสั่งจับเวลาหรือตัวเลขจำนวนนาที
+      const timerMatch = input.toLowerCase().match(/จับเวลา\s*(\d+)\s*นาที/) || input.match(/^\d+$/);
+      if (timerMatch) {
+        const minutes = parseInt(timerMatch[1] || timerMatch[0]);
+        await handleTimerMessage(minutes);
+      } else {
       // เลือกใช้ GPT หรือ Simple Response
       const botResponse = useGPT ? 
         await getChatGPTResponse(input) : 
@@ -476,22 +821,7 @@ export default function ChatbotScreen({ navigation }) {
         createdAt: new Date().getTime(),
         userId: currentUser.uid
       });
-
-      // โหลดข้อความใหม่หลังส่ง
-      const q = query(
-        messagesRef,
-        where('userId', '==', currentUser.uid)
-      );
-      
-      const snapshot = await getDocs(q);
-      const messageList = snapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        .sort((a, b) => b.createdAt - a.createdAt);
-      
-      setMessages(messageList);
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -531,16 +861,16 @@ export default function ChatbotScreen({ navigation }) {
         text: 'ลบ', 
         onPress: async () => {
           try {
-            const currentUser = auth.currentUser;
-            if (!currentUser) return;
+          const currentUser = auth.currentUser;
+          if (!currentUser) return;
 
-            const messagesRef = collection(db, 'chats');
-            const q = query(
-              messagesRef,
-              where('userId', '==', currentUser.uid)
-            );
-            const snapshot = await getDocs(q);
-            
+          const messagesRef = collection(db, 'chats');
+          const q = query(
+            messagesRef,
+            where('userId', '==', currentUser.uid)
+          );
+          const snapshot = await getDocs(q);
+          
             // ลบข้อความทั้งหมดใน Firestore
             const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
             await Promise.all(deletePromises);
@@ -558,11 +888,88 @@ export default function ChatbotScreen({ navigation }) {
     ]);
   };
 
-  const renderItem = ({ item }) => (
+  const renderItem = ({ item }) => {
+    // เพิ่มฟังก์ชันสำหรับจัดการการกดปุ่มควบคุมเวลา
+    const handleTimerControl = async (action) => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const messageRef = doc(db, 'chats', item.id);
+
+      try {
+        switch (action) {
+          case 'start':
+            if (!item.isTimerRunning) {
+              await updateDoc(messageRef, {
+                isTimerRunning: true,
+                timeLeft: item.timeLeft || item.initialTime * 60,
+                initialTime: item.initialTime || Math.floor(item.timeLeft / 60)
+              });
+            }
+            break;
+          case 'stop':
+            if (item.isTimerRunning) {
+              await updateDoc(messageRef, {
+                isTimerRunning: false,
+                timeLeft: item.timeLeft
+              });
+            }
+            break;
+          case 'reset':
+            await updateDoc(messageRef, {
+              isTimerRunning: false,
+              timeLeft: item.initialTime * 60
+            });
+            break;
+        }
+      } catch (error) {
+        console.error('Error controlling timer:', error);
+      }
+    };
+
+    // แยกการแสดงปุ่มควบคุมเวลาออกมา
+    const renderTimerControls = () => {
+      if (item.text.includes('⏰') && item.isTimer) {
+        const timeLeft = item.timeLeft || 0;
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        const timeString = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+        return (
+          <View style={styles.timerControlsContainer}>
+            <Text style={styles.timerText}>{timeString}</Text>
+            <View style={styles.timerControls}>
+              <TouchableOpacity
+                style={[
+                  styles.timerButton,
+                  item.isTimerRunning && styles.timerButtonActive
+                ]}
+                onPress={() => handleTimerControl(item.isTimerRunning ? 'stop' : 'start')}
+              >
+                <Text style={styles.timerButtonText}>
+                  {item.isTimerRunning ? 'กยุด' : 'เริ่ม'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.timerButton}
+                onPress={() => handleTimerControl('reset')}
+              >
+                <Text style={styles.timerButtonText}>รีเซ็ต</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+      return null;
+    };
+
+    return (
+      <View>
     <Animated.View
       style={[
         styles.messageRow,
         item.sender === 'user' ? styles.userRow : styles.botRow,
+            item.isPinned && styles.pinnedMessage,
         {
           opacity: animationValue,
           transform: [
@@ -577,14 +984,14 @@ export default function ChatbotScreen({ navigation }) {
       ]}
     >
       {item.sender === 'bot' && (
-        <View style={styles.avatarContainer}>
-          <Image 
-            source={require('../assets/icon.png')} 
-            style={styles.chefImage}
-            resizeMode="contain"
-          />
-          <View style={styles.statusDot} />
-        </View>
+       <View style={styles.avatarContainer}>
+       <Image 
+         source={require('../assets/icon.png')} 
+         style={styles.chefImage}
+                resizeMode="contain"
+       />
+       <View style={styles.statusDot} />
+     </View>
       )}
       <View
         style={[
@@ -592,6 +999,24 @@ export default function ChatbotScreen({ navigation }) {
           item.sender === 'user' ? styles.userBubble : styles.botBubble,
         ]}
       >
+            <View style={styles.messageHeader}>
+              {!item.isTimer && item.isPinned && (
+                <MaterialIcons name="push-pin" size={16} color={isDarkMode ? "#FFFFFF" : "#000000"} />
+              )}
+              {!item.isTimer && (
+                <TouchableOpacity 
+                  style={styles.pinButton}
+                  onPress={() => handlePinMessage(item.id)}
+                >
+                  <MaterialIcons 
+                    name={item.isPinned ? "push-pin" : "push-pin"} 
+                    size={20} 
+                    color={isDarkMode ? "#FFFFFF" : "#000000"} 
+                    style={{ transform: [{ rotate: item.isPinned ? '0deg' : '45deg' }] }}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
         <Text style={item.sender === 'user' ? styles.userText : styles.botText}>
           {item.text}
         </Text>
@@ -603,7 +1028,10 @@ export default function ChatbotScreen({ navigation }) {
         </Text>
       </View>
     </Animated.View>
+        {renderTimerControls()}
+      </View>
   );
+  };
 
   const renderCategoryButton = (category, icon) => (
     <TouchableOpacity 
@@ -679,71 +1107,104 @@ export default function ChatbotScreen({ navigation }) {
 
   useEffect(() => {
     return () => {
-      // ทำความสะอาดเมื่อออกจากหน้าจอ
+      // ทำความสะอาดเมื่อออจากหน้าจอ
       setMessages([]);
       setInput('');
       setIsTyping(false);
     };
   }, []);
 
+  const handlePinMessage = async (messageId) => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const messageRef = doc(db, 'chats', messageId);
+      const messageDoc = await getDoc(messageRef);
+      
+      if (messageDoc.exists()) {
+        const messageData = messageDoc.data();
+        const isPinned = messageData.isPinned || false;
+        
+        // อัพเดทสถานะการปักหมุด
+        await updateDoc(messageRef, {
+          isPinned: !isPinned,
+          pinnedAt: !isPinned ? new Date().getTime() : null
+        });
+
+        // อัพเดท state
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, isPinned: !isPinned, pinnedAt: !isPinned ? new Date().getTime() : null }
+              : msg
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error pinning message:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อความได้ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
+
   return (
     <RNSSafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <MaterialIcons 
-                name="arrow-back" 
-                size={24} 
-                color={isDarkMode ? "#fff" : "#000"} 
-              />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+              <MaterialIcons name="arrow-back" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+          </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
               แชท
-            </Text>
+          </Text>
           </View>
           <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('PinnedMessages')}
+            >
+              <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={clearMessages}
+            >
+              <MaterialIcons name="delete-outline" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => setUseGPT(!useGPT)}
+            >
+              <MaterialIcons 
+                name={useGPT ? 'psychology' : 'psychology-alt'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.headerThemeButton}
               onPress={toggleTheme}
             >
               <MaterialIcons 
-                name={isDarkMode ? "light-mode" : "dark-mode"} 
+                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
                 size={24} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
               />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.headerButton, { backgroundColor: '#00B900' }]}
-              onPress={clearMessages}
-            >
-              <MaterialIcons 
-                name="delete-sweep" 
-                size={20} 
-                color="#FFFFFF" 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.headerButton, { backgroundColor: useGPT ? '#00B900' : '#666666' }]}
-              onPress={() => setUseGPT(!useGPT)}
-            >
-              <Text style={styles.headerButtonText}>
-                {useGPT ? 'GPT' : 'Simple'}
-              </Text>
             </TouchableOpacity>
           </View>
         </View>
-
-        <FlatList
-          data={messages}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          ref={flatListRef}
-          inverted
-          contentContainerStyle={styles.chatContent}
+        
+          <FlatList
+            data={messages}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            ref={flatListRef}
+            inverted
+            contentContainerStyle={styles.chatContent}
           style={styles.messageList}
           onEndReached={loadMoreMessages}
           onEndReachedThreshold={0.5}
@@ -765,25 +1226,25 @@ export default function ChatbotScreen({ navigation }) {
           style={styles.inputContainer}
         >
           <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.input}
-              value={input}
+          <TextInput
+            style={styles.input}
+            value={input}
               onChangeText={handleInputChange}
-              placeholder="พิมพ์ข้อความ..."
-              placeholderTextColor="#999999"
-              multiline={false}
-              maxHeight={50}
+            placeholder="พิมพ์ข้อความ..."
+            placeholderTextColor="#999999"
+            multiline={false}
+            maxHeight={50}
               onKeyPress={handleKeyPress}
-            />
-            <TouchableOpacity 
-              style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
-              onPress={handleSend}
-              disabled={!input.trim()}
-            >
-              <Text style={styles.sendButtonText}>ส่ง</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+          />
+          <TouchableOpacity 
+            style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
+            onPress={handleSend}
+            disabled={!input.trim()}
+          >
+            <Text style={styles.sendButtonText}>ส่ง</Text>
+          </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
       </View>
     </RNSSafeAreaView>
   );

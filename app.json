@@ -20,7 +20,12 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.yourcompany.cookingbot",
       "buildNumber": "1.0.0",
-      "googleServicesFile": "./ios/Cookingbot/GoogleService-Info.plist"
+      "googleServicesFile": "./ios/Cookingbot/GoogleService-Info.plist",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to camera to record cooking videos",
+        "NSMicrophoneUsageDescription": "This app needs access to microphone to record cooking videos",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photos to save cooking videos"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +33,13 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.yourcompany.cookingbot",
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "NOTIFICATIONS",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,6 +49,16 @@
       "eas": {
         "projectId": "2d8d79cd-320c-4f7c-b119-8ed1404f8205"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00B900",
+          "sounds": ["./assets/notification.wav"]
+        }
+      ]
+    ]
   }
 }

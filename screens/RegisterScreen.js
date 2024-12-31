@@ -20,12 +20,13 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleRegister = async () => {
-    if (!email || !password || !confirmPassword) {
+    if (!email || !password || !confirmPassword || !displayName) {
       setErrorMessage('กรุณากรอกข้อมูลให้ครบ');
       return;
     }
@@ -43,6 +44,7 @@ export default function RegisterScreen({ navigation }) {
       // เพิ่มข้อมูลผู้ใช้ใน Firestore
       await setDoc(doc(db, 'users', user.uid), {
         email: email,
+        displayName: displayName.trim(),
         createdAt: new Date().getTime(),
         lastLogin: new Date().getTime(),
         favorites: [],
@@ -160,6 +162,18 @@ export default function RegisterScreen({ navigation }) {
         <Text style={styles.title}>สมัครสมาชิก</Text>
         
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+        <TextInput
+          style={[styles.input, styles.spacing]}
+          placeholder="ชื่อผู้ใช้งาน"
+          placeholderTextColor="#888"
+          value={displayName}
+          onChangeText={(text) => {
+            setDisplayName(text);
+            setErrorMessage('');
+          }}
+          autoCapitalize="words"
+        />
 
         <TextInput
           style={[styles.input, styles.spacing]}
