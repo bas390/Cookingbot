@@ -8,11 +8,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 
 export default function RegisterScreen({ navigation }) {
@@ -20,14 +20,13 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
 
   const handleRegister = async () => {
-    if (!email || !password || !confirmPassword || !displayName) {
-      setErrorMessage('กรุณากรอกข้อมูลให้ครบ');
+    if (!email || !password || !confirmPassword) {
+      setErrorMessage('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
 
@@ -37,40 +36,20 @@ export default function RegisterScreen({ navigation }) {
     }
 
     try {
-      // สร้างผู้ใช้ใน Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      // เพิ่มข้อมูลผู้ใช้ใน Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        email: email,
-        displayName: displayName.trim(),
-        createdAt: new Date().getTime(),
-        lastLogin: new Date().getTime(),
-        favorites: [],
-        settings: {
-          notifications: true,
-          theme: 'light'
-        }
-      });
-
-      Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อย!');
-      navigation.navigate('Login');
+      await createUserWithEmailAndPassword(auth, email, password);
+      navigation.replace('Home');
     } catch (error) {
-      console.log('Registration error:', error.code);
+      console.log('Register error:', error.code);
       
       switch (error.code) {
         case 'auth/email-already-in-use':
-          setErrorMessage('อีเมลนี้มีผู้ใช้งานแล้ว กรุณาใช้อีเมลอื่น');
+          setErrorMessage('อีเมลนี้มูกใช้งานแล้ว');
           break;
         case 'auth/invalid-email':
           setErrorMessage('รูปแบบอีเมลไม่ถูกต้อง');
           break;
         case 'auth/weak-password':
-          setErrorMessage('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-          break;
-        case 'auth/network-request-failed':
-          setErrorMessage('การเชื่อมต่อล้มเหลว กรุณาตรวจสอบอินเทอร์เน็ต');
+          setErrorMessage('รหัสผ่านต้องมีอวามยาวอย่างน้อย 6 ตัวอักษร');
           break;
         default:
           setErrorMessage('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
@@ -86,7 +65,6 @@ export default function RegisterScreen({ navigation }) {
     content: {
       flex: 1,
       justifyContent: 'center',
-      alignItems: 'center',
       padding: 20,
     },
     title: {
@@ -94,156 +72,154 @@ export default function RegisterScreen({ navigation }) {
       fontWeight: 'bold',
       marginBottom: 30,
       color: isDarkMode ? '#FFFFFF' : '#000000',
+      textAlign: 'center',
     },
-    errorText: {
-      color: '#FF5252',
-      fontSize: 14,
+    inputContainer: {
       marginBottom: 20,
     },
-    input: {
-      width: '100%',
-      height: 50,
-      paddingLeft: 15,
-      paddingRight: 40,
-      borderWidth: 1,
-      borderColor: isDarkMode ? '#333' : '#E5E5E5',
-      borderRadius: 8,
-      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+    label: {
+      fontSize: 16,
+      marginBottom: 8,
       color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    input: {
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 16,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginBottom: 16,
     },
     passwordContainer: {
       position: 'relative',
-      width: '100%',
+      marginBottom: 20,
     },
     eyeIcon: {
       position: 'absolute',
-      right: 15,
-      top: 13,
-      height: 24,
-      width: 24,
-      justifyContent: 'center',
-      alignItems: 'center',
+      right: 12,
+      top: '50%',
+      transform: [{ translateY: -12 }],
     },
-    registerButton: {
+    errorText: {
+      color: '#FF3B30',
+      fontSize: 14,
+      marginBottom: 16,
+      textAlign: 'center',
+    },
+    button: {
       backgroundColor: '#00B900',
-      padding: 15,
       borderRadius: 8,
+      padding: 16,
       alignItems: 'center',
-      width: '100%',
+      marginBottom: 12,
     },
-    registerButtonText: {
+    buttonText: {
       color: '#FFFFFF',
-      fontWeight: 'bold',
       fontSize: 16,
+      fontWeight: '600',
     },
     loginButton: {
-      backgroundColor: '#FF5722',
-      padding: 15,
+      backgroundColor: isDarkMode ? '#333' : '#E5E5E5',
       borderRadius: 8,
+      padding: 16,
       alignItems: 'center',
-      width: '100%',
     },
     loginButtonText: {
-      color: '#FFFFFF',
-      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
       fontSize: 16,
-    },
-    spacing: {
-      marginBottom: 20,
+      fontWeight: '600',
     },
   });
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.content}>
-        <Text style={styles.title}>สมัครสมาชิก</Text>
-        
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-        <TextInput
-          style={[styles.input, styles.spacing]}
-          placeholder="ชื่อผู้ใช้งาน"
-          placeholderTextColor="#888"
-          value={displayName}
-          onChangeText={(text) => {
-            setDisplayName(text);
-            setErrorMessage('');
-          }}
-          autoCapitalize="words"
-        />
-
-        <TextInput
-          style={[styles.input, styles.spacing]}
-          placeholder="กรอก Email"
-          placeholderTextColor="#888"
-          value={email}
-          onChangeText={(text) => {
-            setEmail(text);
-            setErrorMessage('');
-          }}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        <View style={[styles.passwordContainer, styles.spacing]}>
-          <TextInput
-            style={styles.input}
-            placeholder="กรอก Password"
-            placeholderTextColor="#888"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              setErrorMessage('');
-            }}
-            secureTextEntry={!showPassword}
-          />
-          <TouchableOpacity
-            style={styles.eyeIcon}
-            onPress={() => setShowPassword(!showPassword)}
-          >
-            <MaterialIcons
-              name={showPassword ? 'visibility-off' : 'visibility'}
-              size={24}
-              color="#888"
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+      >
+        <View style={styles.content}>
+          <Text style={styles.title}>สมัครสมาชิก</Text>
+          
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>อีเมล</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="กรอกอีเมล"
+              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setErrorMessage('');
+              }}
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
+          </View>
+
+          <View style={styles.passwordContainer}>
+            <Text style={styles.label}>รหัสผ่าน</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="กรอกรหัสผ่าน"
+              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                setErrorMessage('');
+              }}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <MaterialIcons
+                name={showPassword ? 'visibility-off' : 'visibility'}
+                size={24}
+                color={isDarkMode ? '#FFFFFF' : '#666666'}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.passwordContainer}>
+            <Text style={styles.label}>ยืนยันรหัสผ่าน</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="กรอกรหัสผ่านอีกครั้ง"
+              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+              value={confirmPassword}
+              onChangeText={(text) => {
+                setConfirmPassword(text);
+                setErrorMessage('');
+              }}
+              secureTextEntry={!showConfirmPassword}
+            />
+            <TouchableOpacity
+              style={styles.eyeIcon}
+              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            >
+              <MaterialIcons
+                name={showConfirmPassword ? 'visibility-off' : 'visibility'}
+                size={24}
+                color={isDarkMode ? '#FFFFFF' : '#666666'}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.button} onPress={handleRegister}>
+            <Text style={styles.buttonText}>สมัครสมาชิก</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.loginButton} 
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.loginButtonText}>เข้าสู่ระบบ</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={[styles.passwordContainer, styles.spacing]}>
-          <TextInput
-            style={styles.input}
-            placeholder="ยืนยัน Password"
-            placeholderTextColor="#888"
-            value={confirmPassword}
-            onChangeText={(text) => {
-              setConfirmPassword(text);
-              setErrorMessage('');
-            }}
-            secureTextEntry={!showConfirmPassword}
-          />
-          <TouchableOpacity
-            style={styles.eyeIcon}
-            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-          >
-            <MaterialIcons
-              name={showConfirmPassword ? 'visibility-off' : 'visibility'}
-              size={24}
-              color="#888"
-            />
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity style={[styles.registerButton, styles.spacing]} onPress={handleRegister}>
-          <Text style={styles.registerButtonText}>สมัครสมาชิก</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.loginButton} onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.loginButtonText}>เข้าสู่ระบบ</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

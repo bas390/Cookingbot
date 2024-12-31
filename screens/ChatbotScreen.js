@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -107,14 +107,8 @@ const BotTyping = () => {
   );
 };
 
-// ย้าย baseStyles มาไว้นอก component สำหรับ styles ที่ไม่เปลี่ยนแปลงตาม theme
-const baseStyles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
+// styles ที่ไม่เปลี่ยนแปลงตาม theme
+const staticStyles = StyleSheet.create({
   messageList: {
     flex: 1,
   },
@@ -147,10 +141,6 @@ const baseStyles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
   },
-  timestamp: {
-    fontSize: 12,
-    marginTop: 4,
-  },
   userTimestamp: {
     color: 'rgba(255,255,255,0.7)',
     textAlign: 'right',
@@ -162,6 +152,7 @@ const baseStyles = StyleSheet.create({
 });
 
 export default function ChatbotScreen({ navigation }) {
+  const { isDarkMode, toggleTheme } = useTheme();
   const route = useRoute();
   const chatTitle = route.params?.title || 'Chat';
   const [messages, setMessages] = useState([]);
@@ -170,43 +161,49 @@ export default function ChatbotScreen({ navigation }) {
   const animationValue = useState(new Animated.Value(0))[0];
   const flatListRef = useRef(null);
   const [useGPT, setUseGPT] = useState(false);
-  const { isDarkMode, toggleTheme } = useTheme();
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [pinnedMessages, setPinnedMessages] = useState([]);
+  const [timers, setTimers] = useState({});
 
-  // สร้าง dynamic styles ภายใน component
-  const styles = StyleSheet.create({
-    ...baseStyles, // นำ baseStyles มารวม
+  // สร้าง styles ด้วย useMemo
+  const styles = useMemo(() => ({
     safeArea: {
-      ...baseStyles.safeArea,
+      flex: 1,
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
     },
     container: {
-      ...baseStyles.container,
+      flex: 1,
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
     },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
       paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+      elevation: 3,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
     },
     headerLeft: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 12,
     },
     backButton: {
       padding: 8,
-      marginRight: 8,
+      borderRadius: 20,
     },
     headerTitle: {
-      fontSize: 24,
-      fontWeight: 'bold',
+      fontSize: 20,
+      fontWeight: '600',
       color: isDarkMode ? '#FFFFFF' : '#000000',
     },
     headerButtons: {
@@ -217,67 +214,22 @@ export default function ChatbotScreen({ navigation }) {
     headerButton: {
       padding: 8,
       borderRadius: 20,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
-    headerButtonText: {
-      color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '500',
-    },
-    headerThemeButton: {
-      padding: 8,
-      borderRadius: 20,
-    },
-    inputContainer: {
-      borderTopWidth: 1,
-      borderTopColor: isDarkMode ? '#333' : '#E5E5E5',
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
-      width: '100%',
-    },
-    inputWrapper: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
+    messageList: {
+      flex: 1,
       paddingVertical: 8,
     },
-    input: {
-      flex: 1,
-      height: 40,
-      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
-      borderRadius: 20,
+    messageRow: {
+      flexDirection: 'row',
+      marginVertical: 4,
       paddingHorizontal: 16,
-      fontSize: 16,
-      color: isDarkMode ? '#FFFFFF' : '#000000',
-      marginRight: 8,
     },
-    sendButton: {
-      width: 40,
-      height: 40,
-      backgroundColor: '#00B900',
-      borderRadius: 20,
-      justifyContent: 'center',
-      alignItems: 'center',
+    userRow: {
+      justifyContent: 'flex-end',
     },
-    sendButtonDisabled: {
-      backgroundColor: '#666666',
-    },
-    messageBubble: {
-      maxWidth: '75%',
-      padding: 16,
-      borderRadius: 20,
-      minWidth: 120,
-    },
-    userBubble: {
-      backgroundColor: '#00B900',
-      borderTopRightRadius: 4,
-    },
-    botBubble: {
-      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
-      borderTopLeftRadius: 4,
-    },
-    botText: {
-      color: isDarkMode ? '#FFFFFF' : '#000000',
-      fontSize: 16,
-      lineHeight: 24,
+    botRow: {
+      justifyContent: 'flex-start',
     },
     avatarContainer: {
       width: 36,
@@ -306,114 +258,148 @@ export default function ChatbotScreen({ navigation }) {
       borderWidth: 2,
       borderColor: isDarkMode ? '#121212' : '#FFFFFF',
     },
-    typingContainer: {
-      position: 'absolute',
-      bottom: 60,
-      left: 0,
-      right: 0,
+    messageBubble: {
+      maxWidth: '80%',
+      padding: 12,
+      borderRadius: 16,
+      marginVertical: 4,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 1,
+    },
+    userBubble: {
+      backgroundColor: '#00B900',
+      borderTopRightRadius: 4,
+      marginLeft: 'auto',
+    },
+    botBubble: {
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      borderTopLeftRadius: 4,
+      marginRight: 'auto',
+    },
+    userText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      lineHeight: 24,
+    },
+    botText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 16,
+      lineHeight: 24,
+    },
+    timestamp: {
+      fontSize: 12,
+      marginTop: 4,
+      opacity: 0.7,
+    },
+    userTimestamp: {
+      color: 'rgba(255,255,255,0.7)',
+      textAlign: 'right',
+    },
+    botTimestamp: {
+      color: isDarkMode ? '#999999' : '#666666',
+      textAlign: 'left',
+    },
+    inputContainer: {
+      borderTopWidth: 1,
+      borderTopColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+      paddingVertical: 8,
       paddingHorizontal: 16,
     },
-    typingIndicator: {
+    inputWrapper: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 8,
     },
-    typingText: {
-      color: isDarkMode ? '#999999' : '#666666',
+    input: {
+      flex: 1,
+      minHeight: 40,
+      maxHeight: 100,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      fontSize: 16,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    sendButton: {
+      width: 40,
+      height: 40,
+      backgroundColor: '#00B900',
+      borderRadius: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2,
+      shadowRadius: 1.5,
+    },
+    sendButtonDisabled: {
+      backgroundColor: isDarkMode ? '#333' : '#E5E5E5',
+    },
+    sendButtonText: {
+      color: '#FFFFFF',
       fontSize: 14,
+      fontWeight: '600',
     },
-    messageHeader: {
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingTop: 50,
+    },
+    errorContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingTop: 50,
+    },
+    messageContent: {
+      flex: 1,
+    },
+    pinnedBubble: {
+      borderLeftWidth: 3,
+      borderLeftColor: '#00B900',
+    },
+    pinnedHeader: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 4,
+      paddingBottom: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+    },
+    pinnedHeaderIcon: {
+      marginRight: 4,
+      transform: [{ rotate: '45deg' }],
+    },
+    pinnedHeaderText: {
+      fontSize: 12,
+      color: '#00B900',
+      fontWeight: '500',
+    },
+    messageFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 4,
     },
     pinButton: {
       padding: 4,
-    },
-    pinnedMessage: {
-      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-      borderRadius: 8,
-      padding: 8,
-      marginVertical: 2,
-    },
-    headerRight: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    iconButton: {
-      padding: 8,
-      marginLeft: 8,
-    },
-    timerControls: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 12,
-      gap: 12,
-    },
-    timerButton: {
-      flex: 1,
-      backgroundColor: '#00B900',
-      paddingVertical: 10,
-      paddingHorizontal: 16,
       borderRadius: 12,
-      alignItems: 'center',
-      minWidth: 100,
+      backgroundColor: 'transparent',
     },
-    timerButtonActive: {
-      backgroundColor: '#FF5722',
+    pinnedButton: {
+      backgroundColor: 'rgba(0, 185, 0, 0.1)',
     },
-    timerButtonDisabled: {
-      backgroundColor: '#666666',
+    pinIcon: {
+      transform: [{ rotate: '45deg' }],
     },
-    timerButtonText: {
-      color: '#FFFFFF',
-      fontWeight: 'bold',
-      fontSize: 15,
-      textAlign: 'center',
-    },
-    timerText: {
-      fontSize: 32,
-      fontWeight: 'bold',
-      color: isDarkMode ? '#FFFFFF' : '#000000',
-      marginVertical: 12,
-      textAlign: 'center',
-    },
-    timerControlsContainer: {
-      marginTop: 8,
-      marginBottom: 8,
-      paddingHorizontal: 16,
-      alignItems: 'center',
-    },
-    timerControls: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      marginTop: 8,
-      gap: 12,
-    },
-    timerButton: {
-      backgroundColor: '#00B900',
-      paddingVertical: 10,
-      paddingHorizontal: 24,
-      borderRadius: 12,
-      alignItems: 'center',
-      minWidth: 100,
-    },
-    timerButtonActive: {
-      backgroundColor: '#FF5722',
-    },
-    timerButtonText: {
-      color: '#FFFFFF',
-      fontWeight: 'bold',
-      fontSize: 15,
-      textAlign: 'center',
-    },
-    timerText: {
-      fontSize: 32,
-      fontWeight: 'bold',
-      color: isDarkMode ? '#FFFFFF' : '#000000',
-      textAlign: 'center',
-    },
-  });
+  }), [isDarkMode]);
 
   // ดึงข้อความเมื่อ component โหลด
   useEffect(() => {
@@ -694,92 +680,33 @@ export default function ChatbotScreen({ navigation }) {
     return 'สวัสดีค่ะ ดิฉันสามารถแนะนำวิธีทำอาหารไทยยอดนิยมได้แก่:\n1. ต้มยำ\n2. แกงเขียวหวาน\n3. ผัดกะเพรา\n4. ผัดไทย\n5. ส้มตำ\n6. มะม่วงข้าวเหนียว\n7. ต้มไข่\n\nกรุณาพิมพ์ชื่ออาหารที่ต้องการทราบวิธีทำค่ะ';
   };
 
-  const handleTimerMessage = async (minutes) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-
-    const messagesRef = collection(db, 'chats');
-
-    try {
-      // สร้างข้อความตั้งเวลาใหม่
-      const newTimerMessage = {
-        text: `⏰ ตั้งเวลา ${minutes} นาที`,
-        sender: 'bot',
-        timestamp: new Date().toLocaleTimeString(),
-        createdAt: new Date().getTime(),
-        userId: currentUser.uid,
-        isTimer: true,
-        initialTime: minutes,
-        timeLeft: minutes * 60,
-        isTimerRunning: false
-      };
-
-      // เพิ่มข้อความลง Firestore
-      const docRef = await addDoc(messagesRef, newTimerMessage);
-
-      // เริ่มการอัพเดทเวลา
-      const updateTimer = async () => {
-        const messageDoc = await getDoc(docRef);
-        if (!messageDoc.exists()) return;
-
-        const messageData = messageDoc.data();
-        if (!messageData.isTimerRunning) return;
-
-        const timeLeft = messageData.timeLeft - 1;
-        if (timeLeft <= 0) {
-          await updateDoc(docRef, {
-            text: `⏰ ครบ ${minutes} นาทีแล้วค่ะ!\nสามารถนำอาหารออกได้แล้วค่ะ 🍳`,
-            isTimerRunning: false,
-            timeLeft: 0
-          });
-          return;
-        }
-
-        const mins = Math.floor(timeLeft / 60);
-        const secs = timeLeft % 60;
-        const timeString = `${mins}:${secs.toString().padStart(2, '0')}`;
-
-        await updateDoc(docRef, {
-          timeLeft: timeLeft,
-          text: `⏰ ตั้งเวลา ${minutes} นาที`
-        });
-      };
-
-      // ตั้งค่า interval สำหรับอัพเดทเวลา
-      let timerId = null;
-
-      // เริ่มฟังการเปลี่ยนแปลงของข้อความ
-      const unsubscribe = onSnapshot(docRef, (doc) => {
-        const data = doc.data();
-        if (data?.isTimerRunning) {
-          if (!timerId) {
-            timerId = setInterval(updateTimer, 1000);
-          }
-        } else {
-          if (timerId) {
-            clearInterval(timerId);
-            timerId = null;
-          }
-        }
-      });
-
-      // Cleanup function
-      return () => {
-        if (timerId) {
-          clearInterval(timerId);
-        }
-        unsubscribe();
-      };
-
-    } catch (error) {
-      console.error('Error handling timer:', error);
-    }
+  const handleTimerMessage = (minutes) => {
+    const timerMessage = {
+      id: generateMessageId(),
+      text: `ตั้งเวลา ${minutes} นาที`,
+      sender: 'bot',
+      createdAt: new Date().toISOString(),
+      isTimer: true,
+      timerMinutes: minutes,
+      timerStartedAt: null,
+      timerStatus: 'ready' // 'ready', 'running', 'paused', 'finished'
+    };
+    
+    setMessages(prevMessages => [timerMessage, ...prevMessages]);
   };
 
   const handleSend = async () => {
-    if (!input.trim()) {
-      Alert.alert('ข้อผิดพลาด', 'กรุณาใส่ข้อความก่อนส่ง');
-      return;
+    if (!input.trim()) return;
+
+    // ตรวจสอบว่าเป็นคำสั่งตั้งเวลาหรือไม่
+    const timerMatch = input.match(/^(\d+)$/);
+    if (timerMatch) {
+      const minutes = parseInt(timerMatch[1]);
+      if (minutes > 0 && minutes <= 180) { // จำกัดไม่เกิน 3 ชั่วโมง
+        handleTimerMessage(minutes);
+        setInput('');
+        return;
+      }
     }
 
     const currentUser = auth.currentUser;
@@ -888,149 +815,69 @@ export default function ChatbotScreen({ navigation }) {
     ]);
   };
 
-  const renderItem = ({ item }) => {
-    // เพิ่มฟังก์ชันสำหรับจัดการการกดปุ่มควบคุมเวลา
-    const handleTimerControl = async (action) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
+  const renderMessage = ({ item }) => {
+    if (item.isTimer) {
+      // ... existing timer code ...
+    }
 
-      const messageRef = doc(db, 'chats', item.id);
-
-      try {
-        switch (action) {
-          case 'start':
-            if (!item.isTimerRunning) {
-              await updateDoc(messageRef, {
-                isTimerRunning: true,
-                timeLeft: item.timeLeft || item.initialTime * 60,
-                initialTime: item.initialTime || Math.floor(item.timeLeft / 60)
-              });
-            }
-            break;
-          case 'stop':
-            if (item.isTimerRunning) {
-              await updateDoc(messageRef, {
-                isTimerRunning: false,
-                timeLeft: item.timeLeft
-              });
-            }
-            break;
-          case 'reset':
-            await updateDoc(messageRef, {
-              isTimerRunning: false,
-              timeLeft: item.initialTime * 60
-            });
-            break;
-        }
-      } catch (error) {
-        console.error('Error controlling timer:', error);
-      }
-    };
-
-    // แยกการแสดงปุ่มควบคุมเวลาออกมา
-    const renderTimerControls = () => {
-      if (item.text.includes('⏰') && item.isTimer) {
-        const timeLeft = item.timeLeft || 0;
-        const mins = Math.floor(timeLeft / 60);
-        const secs = timeLeft % 60;
-        const timeString = `${mins}:${secs.toString().padStart(2, '0')}`;
-
-        return (
-          <View style={styles.timerControlsContainer}>
-            <Text style={styles.timerText}>{timeString}</Text>
-            <View style={styles.timerControls}>
-              <TouchableOpacity
+    return (
+      <View style={[styles.messageRow, item.sender === 'user' ? styles.userRow : styles.botRow]}>
+        {item.sender === 'bot' && (
+          <View style={styles.avatarContainer}>
+            <Image 
+              source={require('../assets/icon.png')} 
+              style={styles.chefImage}
+              resizeMode="contain"
+            />
+            <View style={styles.statusDot} />
+          </View>
+        )}
+        <View style={[
+          styles.messageBubble,
+          item.sender === 'user' ? styles.userBubble : styles.botBubble,
+          item.isPinned && styles.pinnedBubble
+        ]}>
+          {item.isPinned && (
+            <View style={styles.pinnedHeader}>
+              <MaterialIcons 
+                name="push-pin" 
+                size={14} 
+                color="#00B900"
+                style={styles.pinnedHeaderIcon}
+              />
+              <Text style={styles.pinnedHeaderText}>ข้อความที่ปักหมุด</Text>
+            </View>
+          )}
+          <View style={styles.messageContent}>
+            <Text style={item.sender === 'user' ? styles.userText : styles.botText}>
+              {item.text}
+            </Text>
+            <View style={styles.messageFooter}>
+              <Text style={[
+                styles.timestamp,
+                item.sender === 'user' ? styles.userTimestamp : styles.botTimestamp
+              ]}>
+                {item.timestamp}
+              </Text>
+              <TouchableOpacity 
                 style={[
-                  styles.timerButton,
-                  item.isTimerRunning && styles.timerButtonActive
+                  styles.pinButton,
+                  item.isPinned && styles.pinnedButton
                 ]}
-                onPress={() => handleTimerControl(item.isTimerRunning ? 'stop' : 'start')}
+                onPress={() => handlePinMessage(item.id)}
               >
-                <Text style={styles.timerButtonText}>
-                  {item.isTimerRunning ? 'กยุด' : 'เริ่ม'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.timerButton}
-                onPress={() => handleTimerControl('reset')}
-              >
-                <Text style={styles.timerButtonText}>รีเซ็ต</Text>
+                <MaterialIcons 
+                  name={item.isPinned ? "push-pin" : "push-pin"} 
+                  size={16} 
+                  color={item.isPinned ? "#00B900" : (isDarkMode ? "#999999" : "#666666")}
+                  style={[styles.pinIcon, !item.isPinned && { opacity: 0.5 }]}
+                />
               </TouchableOpacity>
             </View>
           </View>
-        );
-      }
-      return null;
-    };
-
-    return (
-      <View>
-    <Animated.View
-      style={[
-        styles.messageRow,
-        item.sender === 'user' ? styles.userRow : styles.botRow,
-            item.isPinned && styles.pinnedMessage,
-        {
-          opacity: animationValue,
-          transform: [
-            {
-              scale: animationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1],
-              }),
-            },
-          ],
-        },
-      ]}
-    >
-      {item.sender === 'bot' && (
-       <View style={styles.avatarContainer}>
-       <Image 
-         source={require('../assets/icon.png')} 
-         style={styles.chefImage}
-                resizeMode="contain"
-       />
-       <View style={styles.statusDot} />
-     </View>
-      )}
-      <View
-        style={[
-          styles.messageBubble,
-          item.sender === 'user' ? styles.userBubble : styles.botBubble,
-        ]}
-      >
-            <View style={styles.messageHeader}>
-              {!item.isTimer && item.isPinned && (
-                <MaterialIcons name="push-pin" size={16} color={isDarkMode ? "#FFFFFF" : "#000000"} />
-              )}
-              {!item.isTimer && (
-                <TouchableOpacity 
-                  style={styles.pinButton}
-                  onPress={() => handlePinMessage(item.id)}
-                >
-                  <MaterialIcons 
-                    name={item.isPinned ? "push-pin" : "push-pin"} 
-                    size={20} 
-                    color={isDarkMode ? "#FFFFFF" : "#000000"} 
-                    style={{ transform: [{ rotate: item.isPinned ? '0deg' : '45deg' }] }}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-        <Text style={item.sender === 'user' ? styles.userText : styles.botText}>
-          {item.text}
-        </Text>
-        <Text style={[
-          styles.timestamp,
-          item.sender === 'user' ? styles.userTimestamp : styles.botTimestamp
-        ]}>
-          {item.timestamp}
-        </Text>
+        </View>
       </View>
-    </Animated.View>
-        {renderTimerControls()}
-      </View>
-  );
+    );
   };
 
   const renderCategoryButton = (category, icon) => (
@@ -1147,6 +994,73 @@ export default function ChatbotScreen({ navigation }) {
     }
   };
 
+  useEffect(() => {
+    const timerInterval = setInterval(() => {
+      setMessages(prevMessages => {
+        let hasChanges = false;
+        const updatedMessages = prevMessages.map(msg => {
+          if (msg.isTimer && msg.timerStatus === 'running') {
+            const elapsedMinutes = Math.floor((Date.now() - new Date(msg.timerStartedAt).getTime()) / 60000);
+            const remainingMinutes = msg.timerMinutes - elapsedMinutes;
+            
+            if (remainingMinutes <= 0) {
+              hasChanges = true;
+              return { ...msg, timerStatus: 'finished', remainingTime: 0 };
+            }
+            
+            hasChanges = true;
+            return { ...msg, remainingTime: remainingMinutes };
+          }
+          return msg;
+        });
+        
+        return hasChanges ? updatedMessages : prevMessages;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, []);
+
+  const startTimer = (messageId) => {
+    setMessages(prevMessages => 
+      prevMessages.map(msg => 
+        msg.id === messageId 
+          ? { 
+              ...msg, 
+              timerStatus: 'running',
+              timerStartedAt: new Date().toISOString(),
+              remainingTime: msg.timerMinutes 
+            }
+          : msg
+      )
+    );
+  };
+
+  const stopTimer = (messageId) => {
+    setMessages(prevMessages => 
+      prevMessages.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, timerStatus: 'ready', timerStartedAt: null }
+          : msg
+      )
+    );
+  };
+
+  const resetTimer = (messageId) => {
+    setMessages(prevMessages => 
+      prevMessages.map(msg => 
+        msg.id === messageId 
+          ? { 
+              ...msg, 
+              timerStatus: 'ready',
+              timerStartedAt: null,
+              remainingTime: msg.timerMinutes 
+            }
+          : msg
+      )
+    );
+  };
+
   return (
     <RNSSafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -1200,7 +1114,7 @@ export default function ChatbotScreen({ navigation }) {
         
           <FlatList
             data={messages}
-            renderItem={renderItem}
+            renderItem={renderMessage}
             keyExtractor={(item) => item.id}
             ref={flatListRef}
             inverted

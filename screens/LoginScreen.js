@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth } from '../firebase';
@@ -52,10 +53,6 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  const handleRegister = () => {
-    navigation.navigate('Register');
-  };
-
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -64,7 +61,6 @@ export default function LoginScreen({ navigation }) {
     content: {
       flex: 1,
       justifyContent: 'center',
-      alignItems: 'center',
       padding: 20,
     },
     title: {
@@ -72,122 +68,129 @@ export default function LoginScreen({ navigation }) {
       fontWeight: 'bold',
       marginBottom: 30,
       color: isDarkMode ? '#FFFFFF' : '#000000',
+      textAlign: 'center',
     },
-    spacing: {
+    inputContainer: {
       marginBottom: 20,
     },
-    errorText: {
-      color: '#FF5252',
-      fontSize: 14,
-      marginBottom: 10,
+    label: {
+      fontSize: 16,
+      marginBottom: 8,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
     },
     input: {
-      width: '100%',
-      height: 50,
-      paddingLeft: 15,
-      paddingRight: 40,
-      borderWidth: 1,
-      borderColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 8,
-      backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
+      padding: 12,
+      fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginBottom: 16,
     },
     passwordContainer: {
       position: 'relative',
-      width: '100%',
-      marginBottom: 15,
+      marginBottom: 20,
     },
     eyeIcon: {
       position: 'absolute',
-      right: 15,
-      top: 13,
-      height: 24,
-      width: 24,
-      justifyContent: 'center',
-      alignItems: 'center',
+      right: 12,
+      top: '50%',
+      transform: [{ translateY: -12 }],
+    },
+    errorText: {
+      color: '#FF3B30',
+      fontSize: 14,
+      marginBottom: 16,
+      textAlign: 'center',
     },
     button: {
       backgroundColor: '#00B900',
-      padding: 15,
       borderRadius: 8,
+      padding: 16,
       alignItems: 'center',
-      width: '100%',
-      marginBottom: 15,
+      marginBottom: 12,
     },
     buttonText: {
       color: '#FFFFFF',
-      fontWeight: 'bold',
       fontSize: 16,
+      fontWeight: '600',
     },
     registerButton: {
-      backgroundColor: '#FF5722',
-      padding: 15,
+      backgroundColor: isDarkMode ? '#333' : '#E5E5E5',
       borderRadius: 8,
+      padding: 16,
       alignItems: 'center',
-      width: '100%',
     },
     registerButtonText: {
-      color: '#fff',
-      fontWeight: 'bold',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
       fontSize: 16,
+      fontWeight: '600',
     },
   });
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.content}>
-        <Text style={styles.title}>เข้าสู่ระบบ</Text>
-        
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-        
-        <TextInput
-          style={[styles.input, styles.spacing]}
-          placeholder="กรอก Email"
-          placeholderTextColor="#888"
-          value={email}
-          onChangeText={(text) => {
-            setEmail(text);
-            setErrorMessage('');
-          }}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        <View style={[styles.passwordContainer, styles.spacing]}>
-          <TextInput
-            style={styles.input}
-            placeholder="กรอก Password"
-            placeholderTextColor="#888"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              setErrorMessage('');
-            }}
-            secureTextEntry={!showPassword}
-          />
-          <TouchableOpacity
-            style={styles.eyeIcon}
-            onPress={() => setShowPassword(!showPassword)}
-          >
-            <MaterialIcons
-              name={showPassword ? 'visibility-off' : 'visibility'}
-              size={24}
-              color="#888"
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+      >
+        <View style={styles.content}>
+          <Text style={styles.title}>เข้าสู่ระบบ</Text>
+          
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>อีเมล</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="กรอกอีเมล"
+              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setErrorMessage('');
+              }}
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
+          </View>
+
+          <View style={styles.passwordContainer}>
+            <Text style={styles.label}>รหัสผ่าน</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="กรอกรหัสผ่าน"
+              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                setErrorMessage('');
+              }}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <MaterialIcons
+                name={showPassword ? 'visibility-off' : 'visibility'}
+                size={24}
+                color={isDarkMode ? '#FFFFFF' : '#666666'}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.button} onPress={handleLogin}>
+            <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.registerButton} 
+            onPress={() => navigation.navigate('Register')}
+          >
+            <Text style={styles.registerButtonText}>สมัครสมาชิก</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity style={[styles.button, styles.spacing]} onPress={handleLogin}>
-          <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.registerButton} onPress={handleRegister}>
-          <Text style={styles.registerButtonText}>สมัครสมาชิก</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
-}
+}     

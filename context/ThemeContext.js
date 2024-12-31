@@ -1,47 +1,28 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { lightColors, darkColors } from '../theme/colors';
+import React, { createContext, useState, useContext } from 'react';
 
-const ThemeContext = createContext();
+const ThemeContext = createContext({
+  isDarkMode: false,
+  toggleTheme: () => {},
+});
 
-export const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [colors, setColors] = useState(darkColors);
+export function ThemeProvider({ children }) {
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
-  useEffect(() => {
-    // โหลดค่า theme จาก AsyncStorage
-    loadTheme();
-  }, []);
-
-  const loadTheme = async () => {
-    try {
-      const savedTheme = await AsyncStorage.getItem('theme');
-      if (savedTheme) {
-        const isDark = savedTheme === 'dark';
-        setIsDarkMode(isDark);
-        setColors(isDark ? darkColors : lightColors);
-      }
-    } catch (error) {
-      console.error('Error loading theme:', error);
-    }
-  };
-
-  const toggleTheme = async () => {
-    try {
-      const newIsDarkMode = !isDarkMode;
-      setIsDarkMode(newIsDarkMode);
-      setColors(newIsDarkMode ? darkColors : lightColors);
-      await AsyncStorage.setItem('theme', newIsDarkMode ? 'dark' : 'light');
-    } catch (error) {
-      console.error('Error saving theme:', error);
-    }
+  const toggleTheme = () => {
+    setIsDarkMode(prev => !prev);
   };
 
   return (
-    <ThemeContext.Provider value={{ isDarkMode, toggleTheme, colors }}>
+    <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
-};
+}
 
-export const useTheme = () => useContext(ThemeContext);
+export function useTheme() {
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return context;
+}
