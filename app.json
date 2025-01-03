@@ -59,6 +59,9 @@
           "sounds": ["./assets/notification.wav"]
         }
       ]
-    ]
+    ],
+    "developer": {
+      "urlType": "lan"
+    }
   }
 }
