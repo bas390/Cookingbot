@@ -27,6 +27,7 @@ import { useRoute } from '@react-navigation/native';
 import { SafeAreaView as RNSSafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useTheme } from '../context/ThemeContext';
+import { playNotificationSound, playTimerSound } from '../utils/soundUtils';
 
 // BotTyping Component
 const BotTyping = () => {
@@ -831,7 +832,9 @@ export default function ChatbotScreen({ navigation }) {
         )
       );
 
-      // แจ้งเตือนเมื่อหมดเวลา
+      // เพิ่มการเล่นเสียงเมื่อเวลาหมด
+      handleTimerComplete();
+
       Alert.alert(
         'หมดเวลา!',
         'ตัวจับเวลาได้สิ้นสุดลงแล้ว',
@@ -1254,6 +1257,16 @@ export default function ChatbotScreen({ navigation }) {
 
     return () => clearInterval(timerInterval);
   }, []);
+
+  const handleNewMessage = async () => {
+    await playNotificationSound();
+    // โค้ดอื่นๆ...
+  };
+
+  const handleTimerComplete = async () => {
+    await playTimerSound();
+    // ...
+  };
 
   return (
     <RNSSafeAreaView style={styles.safeArea}>
