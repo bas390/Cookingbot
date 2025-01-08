@@ -1162,6 +1162,7 @@ export default function ChatbotScreen({ navigation }) {
   const handleError = (error, customMessage = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง') => {
     console.error('Error:', error);
     Alert.alert('ข้อผิดพลาด', customMessage);
+    setIsTyping(false);
   };
 
   const checkConnection = async () => {

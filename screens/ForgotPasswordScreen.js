@@ -13,15 +13,14 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, db } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
 
-export default function RegisterScreen({ navigation }) {
+export default function ForgotPasswordScreen({ navigation }) {
   const { isDarkMode } = useTheme();
-
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -106,44 +105,45 @@ export default function RegisterScreen({ navigation }) {
     },
   });
 
-  const handleRegister = async () => {
-    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+  const handleResetPassword = async () => {
+    if (!email.trim() || !newPassword.trim()) {
       setErrorMessage('กรุณากรอกข้อมูลให้ครบ');
       return;
     }
 
-    if (password !== confirmPassword) {
-      setErrorMessage('รหัสผ่านไม่ตรงกัน');
-      return;
-    }
-
-    if (password.length < 6) {
+    if (newPassword.length < 6) {
       setErrorMessage('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
       return;
     }
 
     setIsLoading(true);
     try {
-      // เพิ่มข้อมูลผู้ใช้ใน Firestore
+      // ค้นหาผู้ใช้จาก Firestore
       const usersRef = collection(db, 'users');
-      await addDoc(usersRef, {
-        email: email.trim(),
-        password: password,
-        createdAt: new Date().getTime(),
-        settings: {
-          theme: 'light',
-          notifications: true
-        }
-      });
+      const q = query(usersRef, where('email', '==', email.trim()));
+      const querySnapshot = await getDocs(q);
 
-      Alert.alert(
-        'สำเร็จ',
-        'สมัครสมาชิกเรียบร้อยแล้ว',
-        [{ text: 'ตกลง', onPress: () => navigation.navigate('Login') }]
-      );
+      if (!querySnapshot.empty) {
+        // พบผู้ใช้ในระบบ อัพเดทรหัสผ่าน
+        const userDoc = querySnapshot.docs[0];
+        const userRef = doc(db, 'users', userDoc.id);
+        
+        await updateDoc(userRef, {
+          password: newPassword,
+          updatedAt: new Date().getTime()
+        });
+
+        Alert.alert(
+          'สำเร็จ',
+          'รีเซ็ตรหัสผ่านเรียบร้อยแล้ว',
+          [{ text: 'ตกลง', onPress: () => navigation.navigate('Login') }]
+        );
+      } else {
+        setErrorMessage('ไม่พบบัญชีผู้ใช้นี้ในระบบ');
+      }
     } catch (error) {
-      console.error('Error registering:', error);
-      setErrorMessage('ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง');
+      console.error('Error resetting password:', error);
+      setErrorMessage('ไม่สามารถรีเซ็ตรหัสผ่านได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsLoading(false);
     }
@@ -156,9 +156,9 @@ export default function RegisterScreen({ navigation }) {
         style={styles.container}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>สมัครสมาชิก</Text>
+          <Text style={styles.title}>ลืมรหัสผ่าน</Text>
           <Text style={styles.subtitle}>
-            กรุณากรอกข้อมูลเพื่อสมัครสมาชิก
+            กรุณากรอกอีเมลและรหัสผ่านใหม่
           </Text>
 
           {isLoading ? (
@@ -184,15 +184,15 @@ export default function RegisterScreen({ navigation }) {
               </View>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>รหัสผ่าน</Text>
+                <Text style={styles.label}>รหัสผ่านใหม่</Text>
                 <View style={styles.passwordContainer}>
                   <TextInput
                     style={styles.input}
-                    placeholder="กรอกรหัสผ่าน"
+                    placeholder="กรอกรหัสผ่านใหม่"
                     placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-                    value={password}
+                    value={newPassword}
                     onChangeText={(text) => {
-                      setPassword(text);
+                      setNewPassword(text);
                       setErrorMessage('');
                     }}
                     secureTextEntry={!showPassword}
@@ -210,30 +210,13 @@ export default function RegisterScreen({ navigation }) {
                 </View>
               </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>ยืนยันรหัสผ่าน</Text>
-                <View style={styles.passwordContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="กรอกรหัสผ่านอีกครั้ง"
-                    placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-                    value={confirmPassword}
-                    onChangeText={(text) => {
-                      setConfirmPassword(text);
-                      setErrorMessage('');
-                    }}
-                    secureTextEntry={!showPassword}
-                  />
-                </View>
-              </View>
-
               <TouchableOpacity 
                 style={[styles.button, isLoading && styles.buttonDisabled]}
-                onPress={handleRegister}
+                onPress={handleResetPassword}
                 disabled={isLoading}
               >
                 <Text style={styles.buttonText}>
-                  {isLoading ? 'กำลังดำเนินการ...' : 'สมัครสมาชิก'}
+                  {isLoading ? 'กำลังดำเนินการ...' : 'รีเซ็ตรหัสผ่าน'}
                 </Text>
               </TouchableOpacity>
 
@@ -251,4 +234,4 @@ export default function RegisterScreen({ navigation }) {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-}
+} 

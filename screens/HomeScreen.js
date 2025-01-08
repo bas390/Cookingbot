@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -30,7 +31,7 @@ export default function HomeScreen({ navigation }) {
   const [messages, setMessages] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // โหลดข้อมูลแชทจาก AsyncStorage
+  // โหลดข้อมูลแชท
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
@@ -284,10 +285,10 @@ export default function HomeScreen({ navigation }) {
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
     searchContainer: {
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      padding: 16,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
+      gap: 12
     },
     searchInput: {
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
@@ -435,6 +436,65 @@ export default function HomeScreen({ navigation }) {
       fontWeight: '600',
       color: '#FFFFFF',
     },
+    menuButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 12,
+      backgroundColor: '#F5F5F5',
+      borderRadius: 8,
+      gap: 8
+    },
+    darkMenuButton: {
+      backgroundColor: '#1E1E1E'
+    },
+    menuText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    section: {
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
+    },
+    sectionTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      marginBottom: 16,
+    },
+    recipeCard: {
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      borderRadius: 16,
+      padding: 16,
+      marginRight: 16,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+    },
+    recipeImage: {
+      width: 100,
+      height: 100,
+      borderRadius: 8,
+      marginBottom: 8,
+    },
+    recipeName: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    ratingContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    ratingText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
   }), [isDarkMode]);
 
   return (
@@ -464,11 +524,7 @@ export default function HomeScreen({ navigation }) {
             style={styles.logoutButton}
             onPress={handleLogout}
           >
-            <MaterialIcons 
-              name="logout" 
-              size={24} 
-              color={isDarkMode ? '#FFFFFF' : '#000000'} 
-            />
+            <MaterialIcons name="logout" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
           </TouchableOpacity>
         </View>
       </View>

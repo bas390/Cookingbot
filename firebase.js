@@ -1,8 +1,9 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import { getDatabase } from 'firebase/database';
+import { getFirestore } from 'firebase/firestore';
+import { getDatabase, ref, onValue, off } from 'firebase/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAmGOuyVNeEXUlSU3QC-SObo6gEoXdopFE",
@@ -15,21 +16,69 @@ const firebaseConfig = {
   measurementId: "G-PQW9GYK0V5"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage)
-});
-export const database = getDatabase(app);
+let app;
+let db;
+let auth;
+let database;
+let netInfoUnsubscribe;
+let connectedRef;
 
-// ไม่จำเป็นต้องใช้ analytics ใน React Native
-// const analytics = getAnalytics(app); 
+const cleanup = () => {
+  if (database && connectedRef) {
+    off(connectedRef);
+  }
+  if (netInfoUnsubscribe) {
+    netInfoUnsubscribe();
+  }
+};
+
+try {
+  // Initialize Firebase
+  app = initializeApp(firebaseConfig);
+  
+  // Initialize services
+  db = getFirestore(app);
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+  database = getDatabase(app);
+
+  // Add connection state listener
+  connectedRef = ref(database, '.info/connected');
+  onValue(connectedRef, (snap) => {
+    if (snap.val() === true) {
+      console.log('Connected to Firebase');
+    } else {
+      console.log('Not connected to Firebase');
+    }
+  }, (error) => {
+    console.error('Connection monitoring error:', error);
+  });
+
+  // Check initial network state
+  NetInfo.fetch().then(state => {
+    console.log('Initial connection type:', state.type);
+    console.log('Is initially connected?', state.isConnected);
+  });
+
+  // Add network state monitoring
+  netInfoUnsubscribe = NetInfo.addEventListener(state => {
+    console.log('Connection type:', state.type);
+    console.log('Is connected?', state.isConnected);
+  });
+
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+  cleanup();
+}
 
 // สร้าง references สำหรับ Realtime Database
-export const dbRef = {
+const dbRef = {
   users: 'users',
   chats: 'chats',
   messages: 'messages',
   userChats: 'userChats'
-}; 
+};
+
+export { db, auth, database, dbRef, cleanup };
+export default app; 

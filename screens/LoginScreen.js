@@ -178,6 +178,29 @@ export default function LoginScreen({ navigation }) {
       fontSize: 16,
       fontWeight: '600',
     },
+    forgotPasswordButton: {
+      marginTop: 15,
+      padding: 10,
+    },
+    forgotPasswordText: {
+      color: '#FF6B6B',
+      fontSize: 16,
+      textAlign: 'center',
+    },
+    registerContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      marginTop: 15,
+    },
+    registerText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 16,
+    },
+    registerLink: {
+      color: '#00B900',
+      fontSize: 16,
+      fontWeight: '600',
+    },
   });
 
   return (
@@ -241,11 +264,18 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={styles.registerButton} 
-                onPress={() => navigation.navigate('Register')}
+                style={styles.forgotPasswordButton} 
+                onPress={() => navigation.navigate('ForgotPassword')}
               >
-                <Text style={styles.registerButtonText}>สมัครสมาชิก</Text>
+                <Text style={styles.forgotPasswordText}>ลืมรหัสผ่าน?</Text>
               </TouchableOpacity>
+
+              <View style={styles.registerContainer}>
+                <Text style={styles.registerText}>ยังไม่มีบัญชี? </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                  <Text style={styles.registerLink}>ลงทะเบียน</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
         </View>
