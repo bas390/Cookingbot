@@ -7,40 +7,26 @@ export const ThemeProvider = ({ children }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
-    loadThemePreference();
-  }, []);
-
-  const loadThemePreference = async () => {
-    try {
-      const savedTheme = await AsyncStorage.getItem('theme');
-      if (savedTheme !== null) {
-        try {
-          const parsedTheme = JSON.parse(savedTheme);
-          if (typeof parsedTheme === 'boolean') {
-            setIsDarkMode(parsedTheme);
-          }
-        } catch (parseError) {
-          await AsyncStorage.removeItem('theme');
-          await AsyncStorage.setItem('theme', JSON.stringify(false));
-        }
-      }
-    } catch (error) {
-      console.error('Error loading theme preference:', error);
+    const loadTheme = async () => {
       try {
-        await AsyncStorage.setItem('theme', JSON.stringify(false));
-      } catch (resetError) {
-        console.error('Error resetting theme:', resetError);
+        const savedTheme = await AsyncStorage.getItem('theme');
+        if (savedTheme) {
+          setIsDarkMode(savedTheme === 'dark');
+        }
+      } catch (error) {
+        console.error('Error loading theme:', error);
       }
-    }
-  };
+    };
+    loadTheme();
+  }, []);
 
   const toggleTheme = async () => {
     try {
       const newTheme = !isDarkMode;
       setIsDarkMode(newTheme);
-      await AsyncStorage.setItem('theme', JSON.stringify(newTheme));
+      await AsyncStorage.setItem('theme', newTheme ? 'dark' : 'light');
     } catch (error) {
-      console.error('Error saving theme preference:', error);
+      console.error('Error saving theme:', error);
     }
   };
 

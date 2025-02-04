@@ -21,6 +21,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   const { isDarkMode } = useTheme();
   const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -106,8 +107,13 @@ export default function ForgotPasswordScreen({ navigation }) {
   });
 
   const handleResetPassword = async () => {
-    if (!email.trim() || !newPassword.trim()) {
+    if (!email.trim() || !newPassword.trim() || !confirmNewPassword.trim()) {
       setErrorMessage('กรุณากรอกข้อมูลให้ครบ');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setErrorMessage('รหัสผ่านไม่ตรงกัน');
       return;
     }
 
@@ -207,6 +213,23 @@ export default function ForgotPasswordScreen({ navigation }) {
                       color={isDarkMode ? '#FFFFFF' : '#666666'}
                     />
                   </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>ยืนยันรหัสผ่านใหม่</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
+                    placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+                    value={confirmNewPassword}
+                    onChangeText={(text) => {
+                      setConfirmNewPassword(text);
+                      setErrorMessage('');
+                    }}
+                    secureTextEntry={!showPassword}
+                  />
                 </View>
               </View>
 

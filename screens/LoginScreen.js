@@ -16,6 +16,10 @@ import { auth } from '../firebase';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from '../utils/secureStorage';
+import { haptics } from '../utils/haptics';
+import ErrorState from '../components/ErrorState';
+import LoadingSkeleton from '../components/LoadingSkeleton';
 
 export default function LoginScreen({ navigation }) {
   const { isDarkMode } = useTheme();
@@ -24,10 +28,19 @@ export default function LoginScreen({ navigation }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const checkLoginState = async () => {
       try {
+        setIsLoading(true);
+        const currentUser = auth.currentUser;
+        
+        if (currentUser) {
+          navigation.replace('Home');
+          return;
+        }
+
         const savedEmail = await AsyncStorage.getItem('userEmail');
         const savedPassword = await AsyncStorage.getItem('userPassword');
         
@@ -35,7 +48,7 @@ export default function LoginScreen({ navigation }) {
           try {
             const userCredential = await signInWithEmailAndPassword(auth, savedEmail, savedPassword);
             if (userCredential.user) {
-              navigation.navigate('Home');
+              navigation.replace('Home');
             }
           } catch (error) {
             console.error('Auto login error:', error);
@@ -45,6 +58,7 @@ export default function LoginScreen({ navigation }) {
         }
       } catch (error) {
         console.error('Error checking login state:', error);
+        setError(error);
       } finally {
         setIsLoading(false);
       }
@@ -55,40 +69,49 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('แจ้งเตือน', 'กรุณากรอกอีเมลและรหัสผ่าน');
+      setErrorMessage('กรุณากรอกอีเมลและรหัสผ่าน');
       return;
     }
 
     try {
       setIsLoading(true);
-      setErrorMessage('');
+      setError(null);
+      haptics.light();
+
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      if (userCredential.user) {
-        await AsyncStorage.setItem('userEmail', email);
-        await AsyncStorage.setItem('userPassword', password);
-        navigation.navigate('Home');
-      }
+      await AsyncStorage.setItem('userEmail', email.trim());
+      await AsyncStorage.setItem('userPassword', password);
+
+      await secureStorage.setItem('userData', {
+        email: userCredential.user.email,
+        uid: userCredential.user.uid
+      });
+      
+      haptics.success();
+      navigation.replace('Home');
     } catch (error) {
-      console.error('Error logging in:', error);
-      let errorMessage = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+      haptics.error();
+      console.error('Login error:', error);
       
+      let message = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
       switch (error.code) {
         case 'auth/invalid-email':
-          errorMessage = 'รูปแบบอีเมลไม่ถูกต้อง';
+          message = 'อีเมลไม่ถูกต้อง';
+          break;
+        case 'auth/user-disabled':
+          message = 'บัญชีผู้ใช้ถูกระงับ';
           break;
         case 'auth/user-not-found':
-          errorMessage = 'ไม่พบบัญชีผู้ใช้นี้';
+          message = 'ไม่พบบัญชีผู้ใช้นี้';
           break;
         case 'auth/wrong-password':
-          errorMessage = 'รหัสผ่านไม่ถูกต้อง';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'คุณลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่';
+          message = 'รหัสผ่านไม่ถูกต้อง';
           break;
       }
       
-      setErrorMessage(errorMessage);
+      setErrorMessage(message);
+      setError(error);
     } finally {
       setIsLoading(false);
     }
@@ -205,81 +228,79 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <View style={styles.content}>
-          <Text style={styles.title}>เข้าสู่ระบบ</Text>
-          
-          {isLoading ? (
-            <ActivityIndicator size="large" color="#00B900" />
-          ) : (
-            <>
-              {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-              
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>อีเมล</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="กรอกอีเมล"
-                  placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-                  value={email}
-                  onChangeText={(text) => {
-                    setEmail(text);
-                    setErrorMessage('');
-                  }}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
+      {isLoading ? (
+        <LoadingSkeleton />
+      ) : error ? (
+        <ErrorState error={error} onRetry={() => setError(null)} />
+      ) : (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.container}
+        >
+          <View style={styles.content}>
+            <Text style={styles.title}>เข้าสู่ระบบ</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>อีเมล</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="กรอกอีเมล"
+                placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  setErrorMessage('');
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
 
-              <View style={styles.passwordContainer}>
-                <Text style={styles.label}>รหัสผ่าน</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="กรอกรหัสผ่าน"
-                  placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-                  value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    setErrorMessage('');
-                  }}
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <MaterialIcons
-                    name={showPassword ? 'visibility' : 'visibility-off'}
-                    size={24}
-                    color={isDarkMode ? '#FFFFFF' : '#666666'}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity style={styles.button} onPress={handleLogin}>
-                <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.forgotPasswordButton} 
-                onPress={() => navigation.navigate('ForgotPassword')}
+            <View style={styles.passwordContainer}>
+              <Text style={styles.label}>รหัสผ่าน</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="กรอกรหัสผ่าน"
+                placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  setErrorMessage('');
+                }}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                style={styles.eyeIcon}
+                onPress={() => setShowPassword(!showPassword)}
               >
-                <Text style={styles.forgotPasswordText}>ลืมรหัสผ่าน?</Text>
+                <MaterialIcons
+                  name={showPassword ? 'visibility' : 'visibility-off'}
+                  size={24}
+                  color={isDarkMode ? '#FFFFFF' : '#666666'}
+                />
               </TouchableOpacity>
+            </View>
 
-              <View style={styles.registerContainer}>
-                <Text style={styles.registerText}>ยังไม่มีบัญชี? </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                  <Text style={styles.registerLink}>ลงทะเบียน</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+            <TouchableOpacity style={styles.button} onPress={handleLogin}>
+              <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.forgotPasswordButton} 
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
+              <Text style={styles.forgotPasswordText}>ลืมรหัสผ่าน?</Text>
+            </TouchableOpacity>
+
+            <View style={styles.registerContainer}>
+              <Text style={styles.registerText}>ยังไม่มีบัญชี? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                <Text style={styles.registerLink}>ลงทะเบียน</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }     

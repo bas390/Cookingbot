@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, db } from '../firebase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { collection, addDoc } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 
@@ -124,11 +125,15 @@ export default function RegisterScreen({ navigation }) {
 
     setIsLoading(true);
     try {
+      // สร้างบัญชีใน Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+
       // เพิ่มข้อมูลผู้ใช้ใน Firestore
       const usersRef = collection(db, 'users');
       await addDoc(usersRef, {
+        uid: user.uid,
         email: email.trim(),
-        password: password,
         createdAt: new Date().getTime(),
         settings: {
           theme: 'light',
@@ -143,7 +148,24 @@ export default function RegisterScreen({ navigation }) {
       );
     } catch (error) {
       console.error('Error registering:', error);
-      setErrorMessage('ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง');
+      let message = 'ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง';
+      
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          message = 'อีเมลนี้ถูกใช้งานแล้ว';
+          break;
+        case 'auth/invalid-email':
+          message = 'รูปแบบอีเมลไม่ถูกต้อง';
+          break;
+        case 'auth/operation-not-allowed':
+          message = 'ไม่สามารถสมัครสมาชิกได้ในขณะนี้';
+          break;
+        case 'auth/weak-password':
+          message = 'รหัสผ่านไม่ปลอดภัยเพียงพอ';
+          break;
+      }
+      
+      setErrorMessage(message);
     } finally {
       setIsLoading(false);
     }

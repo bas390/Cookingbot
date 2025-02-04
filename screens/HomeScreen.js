@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Platform,
   StatusBar,
   Image,
+  Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -21,6 +22,15 @@ import { ref, query, orderByChild, onValue, set, update, remove } from 'firebase
 import { addDoc, collection, deleteDoc, doc, getDocs, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { signOut } from 'firebase/auth';
+import { haptics } from '../utils/haptics';
+
+const ChatItem = React.memo(({ chat, onPress, onDelete, onEdit }) => {
+  return (
+    <Animated.View entering={FadeInDown} exiting={FadeOutUp}>
+      {/* existing chat item JSX */}
+    </Animated.View>
+  );
+});
 
 export default function HomeScreen({ navigation }) {
   const { isDarkMode, toggleTheme } = useTheme();
@@ -30,6 +40,16 @@ export default function HomeScreen({ navigation }) {
   const [editingChat, setEditingChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true
+    }).start();
+  }, []);
 
   // โหลดข้อมูลแชท
   useEffect(() => {
@@ -56,6 +76,23 @@ export default function HomeScreen({ navigation }) {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // เพิ่ม useEffect สำหรับตรวจสอบการเชื่อมต่อ
+  useEffect(() => {
+    const checkConnectivity = async () => {
+      try {
+        const response = await fetch('https://www.google.com');
+        setIsOnline(response.status === 200);
+      } catch (error) {
+        setIsOnline(false);
+      }
+    };
+
+    const interval = setInterval(checkConnectivity, 30000); // ตรวจสอบทุก 30 วินาที
+    checkConnectivity();
+
+    return () => clearInterval(interval);
   }, []);
 
   // ฟังก์ชันเพิ่มแชทใหม่
@@ -116,45 +153,53 @@ export default function HomeScreen({ navigation }) {
   };
 
   // ฟังก์ชันลบแชท
-  const handleDeleteChat = (chatId) => {
-    Alert.alert(
-      'ยืนยันการลบ',
-      'คุณต้องการลบแชทนี้ใช่หรือไม่?',
-      [
-        { text: 'ยกเลิก', style: 'cancel' },
-        {
-          text: 'ลบ',
-          onPress: async () => {
-            const currentUser = auth.currentUser;
-            if (!currentUser) return;
+  const handleDeleteChat = async (chatId) => {
+    try {
+      haptics.heavy();
+      Alert.alert(
+        'ยืนยันการลบ',
+        'คุณต้องการลบแชทนี้ใช่หรือไม่?',
+        [
+          { text: 'ยกเลิก', style: 'cancel' },
+          {
+            text: 'ลบ',
+            onPress: async () => {
+              const currentUser = auth.currentUser;
+              if (!currentUser) return;
 
-            try {
-              // ลบข้อมูลห้องแชท
-              const chatsRef = collection(db, 'chats');
-              const chatQuery = query(
-                chatsRef,
-                where('userId', '==', currentUser.uid),
-                where('type', 'in', ['chat_info', 'message']),
-                where('chatId', '==', chatId)
-              );
-              const snapshot = await getDocs(chatQuery);
-              
-              const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
-              await Promise.all(deletePromises);
+              try {
+                // ลบข้อมูลห้องแชท
+                const chatsRef = collection(db, 'chats');
+                const chatQuery = query(
+                  chatsRef,
+                  where('userId', '==', currentUser.uid),
+                  where('type', 'in', ['chat_info', 'message']),
+                  where('chatId', '==', chatId)
+                );
+                const snapshot = await getDocs(chatQuery);
+                
+                const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
 
-              // ลบเอกสารห้องแชทหลัก
-              const mainChatRef = doc(db, 'chats', chatId);
-              await deleteDoc(mainChatRef);
+                // ลบเอกสารห้องแชทหลัก
+                const mainChatRef = doc(db, 'chats', chatId);
+                await deleteDoc(mainChatRef);
 
-            } catch (error) {
-              console.error('Error deleting chat:', error);
-              Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่อีกครั้ง');
-            }
+              } catch (error) {
+                console.error('Error deleting chat:', error);
+                Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่อีกครั้ง');
+              }
+            },
+            style: 'destructive'
           },
-          style: 'destructive'
-        },
-      ]
-    );
+        ]
+      );
+      haptics.success();
+    } catch (error) {
+      haptics.error();
+      console.error('Error deleting chat:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่อีกครั้ง');
+    }
   };
 
   // ฟังก์ชันสร้าง ID ที่ไม่ซ้ำ
@@ -166,8 +211,11 @@ export default function HomeScreen({ navigation }) {
     return id;
   };
 
-  const handleChatPress = (chatId) => {
-    navigation.navigate('Chatbot', { chatId });
+  const handleChatPress = (chat) => {
+    navigation.navigate('Chatbot', { 
+      chatId: chat.id,
+      title: chat.title 
+    });
   };
 
   const handleLogout = async () => {
@@ -216,10 +264,7 @@ export default function HomeScreen({ navigation }) {
       >
         <TouchableOpacity
           style={styles.chatItem}
-          onPress={() => navigation.navigate('Chatbot', { 
-            title: item.title,
-            chatId: item.id
-          })}
+          onPress={() => handleChatPress(item)}
         >
           <View style={styles.chatInfo}>
             <Text style={[styles.chatTitle, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
@@ -286,6 +331,7 @@ export default function HomeScreen({ navigation }) {
     },
     searchContainer: {
       padding: 16,
+      paddingBottom: 8,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
       gap: 12
@@ -306,13 +352,16 @@ export default function HomeScreen({ navigation }) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
       padding: 16,
-      borderRadius: 16,
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      borderRadius: 12,
       marginBottom: 12,
       elevation: 2,
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
       shadowOpacity: 0.1,
       shadowRadius: 2,
     },
@@ -350,7 +399,7 @@ export default function HomeScreen({ navigation }) {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      paddingHorizontal: 32,
+      paddingTop: 32,
     },
     emptyText: {
       fontSize: 24,
@@ -495,76 +544,122 @@ export default function HomeScreen({ navigation }) {
       fontWeight: '600',
       color: isDarkMode ? '#FFFFFF' : '#000000',
     },
+    fabButton: {
+      position: 'absolute',
+      right: 20,
+      bottom: Platform.OS === 'ios' ? 40 : 20,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: '#00B900',
+      justifyContent: 'center',
+      alignItems: 'center',
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
+    },
+    chatListContent: {
+      paddingTop: 16,
+      paddingBottom: 100,
+      paddingHorizontal: 16,
+    },
+    offlineBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 16,
+      backgroundColor: '#FF3B30',
+      borderRadius: 8,
+    },
+    offlineText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#FFFFFF',
+      marginLeft: 8,
+    },
   }), [isDarkMode]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chatbot</Text>
-        <View style={styles.headerButtons}>
-          <View style={styles.headerRight}>
+      <Animated.View style={{ opacity: fadeAnim }}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Chatbot</Text>
+          <View style={styles.headerButtons}>
+            <View style={styles.headerRight}>
+              <TouchableOpacity 
+                style={styles.headerButton}
+                onPress={() => navigation.navigate('PinnedMessages')}
+              >
+                <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.headerButton}
+                onPress={toggleTheme}
+              >
+                <MaterialIcons 
+                  name={isDarkMode ? 'light-mode' : 'dark-mode'} 
+                  size={24} 
+                  color={isDarkMode ? '#FFFFFF' : '#000000'} 
+                />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => navigation.navigate('PinnedMessages')}
+              style={styles.logoutButton}
+              onPress={handleLogout}
             >
-              <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={toggleTheme}
-            >
-              <MaterialIcons 
-                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
-                size={24} 
-                color={isDarkMode ? '#FFFFFF' : '#000000'} 
-              />
+              <MaterialIcons name="logout" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity 
-            style={styles.logoutButton}
-            onPress={handleLogout}
-          >
-            <MaterialIcons name="logout" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-          </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="ค้นหาแชท..."
-          placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      {chats.length === 0 ? (
-        <View style={styles.emptyState}>
-          <MaterialIcons 
-            name="chat-bubble-outline" 
-            size={80} 
-            color={isDarkMode ? '#666666' : '#CCCCCC'} 
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="ค้นหาแชท..."
+            placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
-          <Text style={styles.emptyText}>ยังไม่มีแชท</Text>
-          <Text style={styles.emptySubtext}>แตะปุ่ม + เพื่อเริ่มแชทใหม่</Text>
         </View>
-      ) : (
-        <FlatList
-          data={chats.filter(chat => 
-            chat.title.toLowerCase().includes(searchQuery.toLowerCase())
-          )}
-          keyExtractor={(item) => item.id}
-          renderItem={renderChatItem}
-          contentContainerStyle={styles.chatList}
-        />
-      )}
+
+        {!isOnline && (
+          <View style={styles.offlineBar}>
+            <MaterialIcons name="cloud-off" size={16} color="#FFFFFF" />
+            <Text style={styles.offlineText}>ไม่มีการเชื่อมต่ออินเทอร์เน็ต</Text>
+          </View>
+        )}
+
+        {chats.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialIcons 
+              name="chat-bubble-outline" 
+              size={80} 
+              color={isDarkMode ? '#666666' : '#CCCCCC'} 
+            />
+            <Text style={styles.emptyText}>ยังไม่มีแชท</Text>
+            <Text style={styles.emptySubtext}>แตะปุ่ม + เพื่อเริ่มแชทใหม่</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={chats.filter(chat => 
+              chat.title.toLowerCase().includes(searchQuery.toLowerCase())
+            )}
+            keyExtractor={(item) => item.id}
+            renderItem={renderChatItem}
+            contentContainerStyle={styles.chatListContent}
+          />
+        )}
+      </Animated.View>
 
       <TouchableOpacity 
-        style={styles.addButton}
+        style={styles.fabButton}
         onPress={() => setModalVisible(true)}
       >
-        <MaterialIcons name="add" size={32} color="#FFFFFF" />
+        <MaterialIcons name="add" size={30} color="#FFFFFF" />
       </TouchableOpacity>
 
       <Modal

@@ -28,6 +28,9 @@ import { SafeAreaView as RNSSafeAreaView } from 'react-native-safe-area-context'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useTheme } from '../context/ThemeContext';
 import { playNotificationSound, playTimerSound } from '../utils/soundUtils';
+import { haptics } from '../utils/haptics';
+import ErrorState from '../components/ErrorState';
+import LoadingSkeleton from '../components/LoadingSkeleton';
 
 // BotTyping Component
 const BotTyping = () => {
@@ -152,10 +155,16 @@ const staticStyles = StyleSheet.create({
   },
 });
 
-export default function ChatbotScreen({ navigation }) {
+const Message = React.memo(({ message, onPin, onDelete }) => {
+  return (
+    <Animated.View entering={SlideInRight} exiting={SlideOutLeft}>
+      {/* existing message JSX */}
+    </Animated.View>
+  );
+});
+
+export default function ChatbotScreen({ navigation, route }) {
   const { isDarkMode, toggleTheme } = useTheme();
-  const route = useRoute();
-  const chatTitle = route.params?.title || 'Chat';
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -167,6 +176,11 @@ export default function ChatbotScreen({ navigation }) {
   const [pinnedMessage, setPinnedMessage] = useState(null);
   const [timers, setTimers] = useState({});
   const [isOnline, setIsOnline] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const chatId = route.params?.chatId;
+  const [isSending, setIsSending] = useState(false);
 
   // สร้าง styles ด้วย useMemo
   const styles = useMemo(() => ({
@@ -230,9 +244,6 @@ export default function ChatbotScreen({ navigation }) {
     },
     userRow: {
       justifyContent: 'flex-end',
-    },
-    botRow: {
-      justifyContent: 'flex-start',
     },
     avatarContainer: {
       width: 36,
@@ -434,91 +445,144 @@ export default function ChatbotScreen({ navigation }) {
     },
   }), [isDarkMode]);
 
-  // เพิ่มฟังก์ชันโหลดข้อความจาก AsyncStorage
-  const loadOfflineMessages = async () => {
-    try {
-      const offlineMessages = await AsyncStorage.getItem(`messages_${route.params?.chatId}`);
-      if (offlineMessages) {
-        setMessages(JSON.parse(offlineMessages));
-      }
-    } catch (error) {
-      console.error('Error loading offline messages:', error);
-    }
-  };
-
-  // เพิ่มฟังก์ชันบันทึกข้อความลง AsyncStorage
-  const saveOfflineMessages = async (newMessages) => {
-    try {
-      await AsyncStorage.setItem(
-        `messages_${route.params?.chatId}`,
-        JSON.stringify(newMessages)
-      );
-    } catch (error) {
-      console.error('Error saving offline messages:', error);
-    }
-  };
-
-  // แก้ไขฟังก์ชันตึงข้อความจาก Firestore
+  // โหลดข้อมูลแชทเมื่อเปิดหน้าจอ
   useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (!currentUser || !route.params?.chatId) return;
-
-    // ตรวจสอบการเชื่อมต่อ
-    const checkConnectivity = async () => {
-      const isConnected = await checkConnection();
-      setIsOnline(isConnected);
+    const loadMessages = async () => {
+      if (!chatId) return;
       
-      if (isConnected) {
-        // ถ้าออนไลน์ ดึงข้อความจาก Firestore
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+          navigation.replace('Login');
+          return;
+        }
+
         const messagesRef = collection(db, 'chats');
         const q = query(
           messagesRef,
           where('userId', '==', currentUser.uid),
-          where('chatId', '==', route.params.chatId),
+          where('chatId', '==', chatId),
           where('type', '==', 'message'),
-          orderBy('createdAt', 'desc'),
-          limit(20)
+          orderBy('createdAt', 'desc')
         );
 
+        // ใช้ onSnapshot แทน getDocs เพื่อรับการอัพเดทแบบ realtime
         const unsubscribe = onSnapshot(q, (snapshot) => {
           const messageList = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           }));
           setMessages(messageList);
-          // บันทึกข้อความลง AsyncStorage
-          saveOfflineMessages(messageList);
+          setIsLoading(false);
+        }, (error) => {
+          console.error('Error loading messages:', error);
+          setError(error);
+          setIsLoading(false);
         });
 
-        return () => {
-          unsubscribe();
-          setInput('');
-          setIsTyping(false);
-        };
-      } else {
-        // ถ้าออฟไลน์ โหลดข้อความจาก AsyncStorage
-        loadOfflineMessages();
+        // Cleanup subscription
+        return () => unsubscribe();
+
+      } catch (error) {
+        console.error('Error in loadMessages:', error);
+        setError(error);
+        setIsLoading(false);
       }
     };
 
-    checkConnectivity();
-  }, [route.params?.chatId]);
+    loadMessages();
+  }, [chatId]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isSending) return;
+
+    const currentUser = auth.currentUser;
+    if (!currentUser || !chatId) return;
+
+    // ตรวจสอบคำสั่งจับเวลาก่อน
+    const timerMatch = input.match(/^(\d+)$/);
+    if (timerMatch) {
+      const minutes = parseInt(timerMatch[1]);
+      if (minutes > 0 && minutes <= 180) {
+        handleTimerMessage(minutes);
+        setInput('');
+        return;
+      }
+    }
+
+    try {
+      setIsSending(true);
+      haptics.light();
+      
+      const messagesRef = collection(db, 'chats');
+      const userMessage = {
+        text: input.trim(),
+        sender: 'user',
+        userId: currentUser.uid,
+        chatId: chatId,
+        type: 'message',
+        createdAt: new Date().getTime()
+      };
+
+      await addDoc(messagesRef, userMessage);
+      setInput('');
+      setIsTyping(true);
+
+      // แสดง loading ใน UI
+      const loadingMessage = {
+        id: 'loading',
+        text: 'กำลังพิมพ์...',
+        sender: 'bot',
+        isLoading: true
+      };
+      setMessages(prev => [loadingMessage, ...prev]);
+
+      const botResponse = useGPT ? 
+        await getChatGPTResponse(input) : 
+        getSimpleResponse(input);
+
+      // ลบ loading message
+      setMessages(prev => prev.filter(msg => msg.id !== 'loading'));
+
+      const botMessage = {
+        text: botResponse,
+        sender: 'bot',
+        userId: currentUser.uid,
+        chatId: chatId,
+        type: 'message',
+        createdAt: new Date().getTime()
+      };
+
+      await addDoc(messagesRef, botMessage);
+      haptics.success();
+      
+    } catch (error) {
+      console.error('Error sending message:', error);
+      haptics.error();
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถส่งข้อความได้ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSending(false);
+      setIsTyping(false);
+    }
+  };
 
   const getChatGPTResponse = async (userMessage) => {
     try {
-      console.log('Sending request to ChatGPT...');
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
           messages: [
             {
               role: "system",
-              content: "คุณเป็นผู้เชี่ยวชาญด้านอาหารไทย สามารถให้คำแนะนำเกี่ยวกับการทำอาหาร สูตรอาหาร และเคล็ดลับการทำอาหารไทยได้"
+              content: "คุณเป็นผู้เชี่ยวชาญด้านการทำอาหาร คอยให้คำแนะนำเกี่ยวกับการทำอาหาร สูตรอาหาร และเทคนิคการทำอาหารต่างๆ"
             },
             {
               role: "user",
@@ -541,8 +605,8 @@ export default function ChatbotScreen({ navigation }) {
       return data.choices[0].message.content;
 
     } catch (error) {
-      console.error('ChatGPT API Error:', error.message);
-      return 'ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง';
+      console.error('ChatGPT API Error:', error);
+      return 'ขออภัย ไม่สามารถเชื่อมต่อกับ ChatGPT ได้ในขณะนี้';
     }
   };
 
@@ -673,7 +737,7 @@ export default function ChatbotScreen({ navigation }) {
       return `วิธีทำผัดไทยมีดังนี้:
 
 1. เตรียมส่วนผสม:
-   - เส้นจันท์แช่น้ำ
+   - เส้นจันท์แช่น้ำปรุงรสให้นุ่ม
    - ไข่ กุ้งแห้ง เต้าหู้
    - ถั่วงอก ใบกุยช่าย
    - น้ำตาลปี๊บ น้ำปลา น้ำมะขาม
@@ -753,7 +817,7 @@ export default function ChatbotScreen({ navigation }) {
     const now = new Date();
     
     const currentUser = auth.currentUser;
-    if (!currentUser || !route.params?.chatId) return;
+    if (!currentUser || !chatId) return;
 
     const messagesRef = collection(db, 'chats');
     const newMessage = {
@@ -762,7 +826,7 @@ export default function ChatbotScreen({ navigation }) {
       timestamp: now.toISOString(),
       createdAt: now.getTime(),
       userId: currentUser.uid,
-      chatId: route.params.chatId,
+      chatId: chatId,
       type: 'message',
       timer: {
         initialTime: totalSeconds,
@@ -864,84 +928,6 @@ export default function ChatbotScreen({ navigation }) {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
-
-    const currentUser = auth.currentUser;
-    if (!currentUser || !route.params?.chatId) return;
-
-    // ตรวจสอบคำสั่งจับเวลาก่อน
-    const timerMatch = input.match(/^(\d+)$/);
-    if (timerMatch) {
-      const minutes = parseInt(timerMatch[1]);
-      if (minutes > 0 && minutes <= 180) {
-        handleTimerMessage(minutes);
-        setInput('');
-        return;
-      }
-    }
-
-    const now = new Date();
-    const userMessage = {
-      id: Date.now().toString(),
-      text: input,
-      sender: 'user',
-      timestamp: now.toISOString(),
-      createdAt: now.getTime(),
-      userId: currentUser.uid,
-      chatId: route.params.chatId,
-      type: 'message'
-    };
-
-    try {
-      if (isOnline) {
-        // ถ้าออนไลน์ ส่งข้อความไปยัง Firestore
-        const messagesRef = collection(db, 'chats');
-        await addDoc(messagesRef, userMessage);
-        setInput('');
-        setIsTyping(true);
-
-        const botResponse = useGPT ? 
-          await getChatGPTResponse(input) : 
-          getSimpleResponse(input);
-
-        const botMessage = {
-          text: botResponse,
-          sender: 'bot',
-          timestamp: new Date().toISOString(),
-          createdAt: new Date().getTime(),
-          userId: currentUser.uid,
-          chatId: route.params.chatId,
-          type: 'message'
-        };
-
-        await addDoc(messagesRef, botMessage);
-      } else {
-        // ถ้าออฟไลน์ เก็บข้อความไว้ใน AsyncStorage
-        setMessages(prevMessages => {
-          const newMessages = [userMessage, {
-            id: (Date.now() + 1).toString(),
-            text: getSimpleResponse(input),
-            sender: 'bot',
-            timestamp: new Date().toISOString(),
-            createdAt: new Date().getTime(),
-            userId: currentUser.uid,
-            chatId: route.params.chatId,
-            type: 'message'
-          }, ...prevMessages];
-          saveOfflineMessages(newMessages);
-          return newMessages;
-        });
-        setInput('');
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถส่งข้อความได้ กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
   const addMessage = (sender, text, timestamp) => {
     setMessages((prevMessages) => [
       { id: Date.now().toString(), sender, text, timestamp },
@@ -972,13 +958,13 @@ export default function ChatbotScreen({ navigation }) {
         onPress: async () => {
           try {
             const currentUser = auth.currentUser;
-            if (!currentUser || !route.params?.chatId) return;
+            if (!currentUser || !chatId) return;
 
             const messagesRef = collection(db, 'chats');
             const q = query(
               messagesRef,
               where('userId', '==', currentUser.uid),
-              where('chatId', '==', route.params.chatId),
+              where('chatId', '==', chatId),
               where('type', '==', 'message')
             );
             const snapshot = await getDocs(q);
@@ -1124,7 +1110,7 @@ export default function ChatbotScreen({ navigation }) {
       setIsLoadingMore(true);
       const lastMessage = messages[messages.length - 1];
       
-      if (!lastMessage?.createdAt || !route.params?.chatId) {
+      if (!lastMessage?.createdAt || !chatId) {
         setHasMore(false);
         return;
       }
@@ -1133,7 +1119,7 @@ export default function ChatbotScreen({ navigation }) {
       const q = query(
         messagesRef,
         where('userId', '==', auth.currentUser.uid),
-        where('chatId', '==', route.params.chatId),
+        where('chatId', '==', chatId),
         where('type', '==', 'message'),
         orderBy('createdAt', 'desc'),
         startAfter(lastMessage.createdAt),
@@ -1282,7 +1268,7 @@ export default function ChatbotScreen({ navigation }) {
             </TouchableOpacity>
             <View>
               <Text style={styles.headerTitle}>
-                {chatTitle}
+                {route.params?.title || 'Chat'}
               </Text>
               {!isOnline && (
                 <Text style={styles.offlineText}>
@@ -1321,7 +1307,16 @@ export default function ChatbotScreen({ navigation }) {
           </View>
         </View>
         
-          <FlatList
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : error ? (
+          <ErrorState error={error} onRetry={loadMoreMessages} />
+        ) : (
+          <Animated.FlatList
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: true }
+            )}
             data={messages}
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
@@ -1340,6 +1335,7 @@ export default function ChatbotScreen({ navigation }) {
               />
             }
           />
+        )}
 
         {isTyping && <BotTyping />}
 
