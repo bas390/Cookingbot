@@ -9,7 +9,7 @@ export const LoadingState = () => {
   
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color="#00B900" />
+      <ActivityIndicator size="large" color="#6de67b" />
       <Text style={[styles.text, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
         กำลังโหลด...
       </Text>
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: '#00B900',
+    backgroundColor: '#6de67b',
     borderRadius: 8,
   },
   retryText: {

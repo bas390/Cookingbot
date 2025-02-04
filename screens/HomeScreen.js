@@ -13,16 +13,20 @@ import {
   StatusBar,
   Image,
   Animated,
+  AppState,
+  RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Swipeable } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, database, dbRef, db } from '../firebase';
 import { ref, query, orderByChild, onValue, set, update, remove } from 'firebase/database';
-import { addDoc, collection, deleteDoc, doc, getDocs, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { signOut } from 'firebase/auth';
 import { haptics } from '../utils/haptics';
+import { formatDistanceToNow } from 'date-fns';
+import { th } from 'date-fns/locale';
 
 const ChatItem = React.memo(({ chat, onPress, onDelete, onEdit }) => {
   return (
@@ -42,6 +46,9 @@ export default function HomeScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [isOnline, setIsOnline] = useState(true);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [sortBy, setSortBy] = useState('latest');
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -60,39 +67,71 @@ export default function HomeScreen({ navigation }) {
     const q = query(
       chatsRef,
       where('userId', '==', currentUser.uid),
-      where('type', '==', 'chat_info'),
-      orderBy('createdAt', 'desc')
+      where('type', '==', 'chat_info')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const chatList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const chatList = await Promise.all(
+        snapshot.docs.map(async (doc) => {
+          const chatData = doc.data();
+          const details = await fetchChatDetails(doc.id);
+          return {
+            id: doc.id,
+            ...chatData,
+            ...details,
+          };
+        })
+      );
       setChats(chatList);
-    }, (error) => {
-      console.error('Error loading chats:', error);
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลแชทได้');
     });
 
     return () => unsubscribe();
   }, []);
 
-  // เพิ่ม useEffect สำหรับตรวจสอบการเชื่อมต่อ
+  // แก้ไขส่วนการตรวจสอบการเชื่อมต่อ
   useEffect(() => {
+    let isSubscribed = true;
+    
     const checkConnectivity = async () => {
       try {
-        const response = await fetch('https://www.google.com');
-        setIsOnline(response.status === 200);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // timeout 5 วินาที
+
+        const response = await fetch('https://www.google.com', {
+          method: 'HEAD',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (isSubscribed) {
+          setIsOnline(response.ok);
+        }
       } catch (error) {
-        setIsOnline(false);
+        if (isSubscribed) {
+          setIsOnline(false);
+        }
       }
     };
 
-    const interval = setInterval(checkConnectivity, 30000); // ตรวจสอบทุก 30 วินาที
+    // ตรวจสอบครั้งแรก
     checkConnectivity();
 
-    return () => clearInterval(interval);
+    // ตรวจสอบทุก 30 วินาที
+    const interval = setInterval(checkConnectivity, 30000);
+
+    // ตรวจสอบเมื่อแอพกลับมาจาก background
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkConnectivity();
+      }
+    });
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, []);
 
   // ฟังก์ชันเพิ่มแชทใหม่
@@ -231,6 +270,56 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  const fetchChatDetails = async (chatId) => {
+    const messagesRef = collection(db, 'chats');
+    const q = query(
+      messagesRef,
+      where('chatId', '==', chatId),
+      where('type', '==', 'message')
+    );
+    
+    const snapshot = await getDocs(q);
+    return {
+      messageCount: snapshot.size,
+    };
+  };
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // โค้ดโหลดข้อมูลแชทใหม่
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const chatsRef = collection(db, 'chats');
+      const q = query(
+        chatsRef,
+        where('userId', '==', currentUser.uid),
+        where('type', '==', 'chat_info'),
+        orderBy('createdAt', 'desc')
+      );
+
+      const snapshot = await getDocs(q);
+      const chatList = await Promise.all(
+        snapshot.docs.map(async (doc) => {
+          const chatData = doc.data();
+          const details = await fetchChatDetails(doc.id);
+          return {
+            id: doc.id,
+            ...chatData,
+            ...details,
+          };
+        })
+      );
+
+      setChats(chatList);
+    } catch (error) {
+      console.error('Error refreshing chats:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   const renderChatItem = ({ item }) => {
     const renderRightActions = (progress, dragX) => {
       const scale = dragX.interpolate({
@@ -263,22 +352,33 @@ export default function HomeScreen({ navigation }) {
         rightThreshold={40}
       >
         <TouchableOpacity
-          style={styles.chatItem}
+          style={[
+            styles.chatItem,
+            !item.isRead && styles.unreadChat
+          ]}
           onPress={() => handleChatPress(item)}
         >
           <View style={styles.chatInfo}>
-            <Text style={[styles.chatTitle, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
+            <Text style={styles.chatTitle}>
               {item.title}
+              {item.messageCount > 0 && (
+                <Text style={styles.messageCount}> ({item.messageCount})</Text>
+              )}
             </Text>
+            {item.lastMessage && (
+              <Text style={styles.lastMessage} numberOfLines={1}>
+                {item.lastMessage}
+              </Text>
+            )}
             <Text style={styles.chatDate}>
-              {new Date(item.createdAt).toLocaleDateString('th-TH')}
+              {formatDistanceToNow(new Date(item.createdAt), {
+                addSuffix: true,
+                locale: th
+              })}
             </Text>
           </View>
-          <MaterialIcons 
-            name="chevron-right" 
-            size={24} 
-            color={isDarkMode ? '#666666' : '#999999'} 
-          />
+          {!item.isRead && <View style={styles.unreadDot} />}
+          <MaterialIcons name="chevron-right" size={24} color="#999" />
         </TouchableOpacity>
       </Swipeable>
     );
@@ -334,15 +434,25 @@ export default function HomeScreen({ navigation }) {
       paddingBottom: 8,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
-      gap: 12
+    },
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
     },
     searchInput: {
+      flex: 1,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingVertical: 10,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    sortButton: {
+      padding: 10,
+      borderRadius: 12,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
     },
     chatList: {
       paddingHorizontal: 16,
@@ -372,8 +482,9 @@ export default function HomeScreen({ navigation }) {
     chatTitle: {
       fontSize: 18,
       fontWeight: '600',
-      marginBottom: 4,
       color: isDarkMode ? '#FFFFFF' : '#000000',
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     chatDate: {
       fontSize: 14,
@@ -420,7 +531,7 @@ export default function HomeScreen({ navigation }) {
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       justifyContent: 'center',
       alignItems: 'center',
       elevation: 4,
@@ -478,7 +589,7 @@ export default function HomeScreen({ navigation }) {
       backgroundColor: isDarkMode ? '#333' : '#E5E5E5',
     },
     confirmButton: {
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
     },
     modalButtonText: {
       fontSize: 16,
@@ -551,7 +662,7 @@ export default function HomeScreen({ navigation }) {
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       justifyContent: 'center',
       alignItems: 'center',
       elevation: 4,
@@ -580,6 +691,26 @@ export default function HomeScreen({ navigation }) {
       fontWeight: '600',
       color: '#FFFFFF',
       marginLeft: 8,
+    },
+    unreadChat: {
+      backgroundColor: isDarkMode ? '#252525' : '#F8F8F8',
+    },
+    unreadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#6de67b',
+      marginRight: 8,
+    },
+    messageCount: {
+      fontSize: 14,
+      color: isDarkMode ? '#999' : '#666',
+      marginLeft: 8,
+    },
+    lastMessage: {
+      fontSize: 14,
+      color: isDarkMode ? '#999' : '#666',
+      marginTop: 4,
     },
   }), [isDarkMode]);
 
@@ -617,20 +748,44 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="ค้นหาแชท..."
-            placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+          <View style={styles.searchRow}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="ค้นหาแชท..."
+              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            <TouchableOpacity 
+              style={styles.sortButton}
+              onPress={() => setSortBy(sortBy === 'latest' ? 'name' : 'latest')}
+            >
+              <MaterialIcons 
+                name={sortBy === 'latest' ? 'access-time' : 'sort-by-alpha'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {!isOnline && (
-          <View style={styles.offlineBar}>
+          <Animated.View 
+            style={[
+              styles.offlineBar,
+              {
+                transform: [{
+                  translateY: slideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-50, 0]
+                  })
+                }]
+              }
+            ]}
+          >
             <MaterialIcons name="cloud-off" size={16} color="#FFFFFF" />
             <Text style={styles.offlineText}>ไม่มีการเชื่อมต่ออินเทอร์เน็ต</Text>
-          </View>
+          </Animated.View>
         )}
 
         {chats.length === 0 ? (
@@ -645,9 +800,22 @@ export default function HomeScreen({ navigation }) {
           </View>
         ) : (
           <FlatList
-            data={chats.filter(chat => 
-              chat.title.toLowerCase().includes(searchQuery.toLowerCase())
-            )}
+            data={chats
+              .filter(chat => chat.title.toLowerCase().includes(searchQuery.toLowerCase()))
+              .sort((a, b) => {
+                if (sortBy === 'name') {
+                  return a.title.localeCompare(b.title);
+                }
+                return b.createdAt - a.createdAt;
+              })
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
+              />
+            }
             keyExtractor={(item) => item.id}
             renderItem={renderChatItem}
             contentContainerStyle={styles.chatListContent}

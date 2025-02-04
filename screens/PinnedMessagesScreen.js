@@ -192,7 +192,7 @@ export default function PinnedMessagesScreen({ navigation }) {
       width: 10,
       height: 10,
       borderRadius: 5,
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       borderWidth: 2,
       borderColor: isDarkMode ? '#121212' : '#FFFFFF',
     },
@@ -208,7 +208,7 @@ export default function PinnedMessagesScreen({ navigation }) {
       shadowRadius: 1,
     },
     userBubble: {
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       borderTopRightRadius: 4,
       marginLeft: 'auto',
     },

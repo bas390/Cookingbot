@@ -38,7 +38,7 @@ const ErrorState = ({ error, onRetry }) => {
     retryButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       paddingHorizontal: 24,
       paddingVertical: 12,
       borderRadius: 8,

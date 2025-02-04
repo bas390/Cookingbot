@@ -179,7 +179,7 @@ export default function LoginScreen({ navigation }) {
       textAlign: 'center',
     },
     button: {
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       borderRadius: 8,
       padding: 16,
       alignItems: 'center',
@@ -220,9 +220,15 @@ export default function LoginScreen({ navigation }) {
       fontSize: 16,
     },
     registerLink: {
-      color: '#00B900',
+      color: '#6de67b',
       fontSize: 16,
       fontWeight: '600',
+    },
+    loginButton: {
+      backgroundColor: '#6de67b',
+    },
+    socialButton: {
+      borderColor: '#6de67b',
     },
   });
 

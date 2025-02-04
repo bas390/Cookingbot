@@ -81,7 +81,7 @@ export default function ForgotPasswordScreen({ navigation }) {
       textAlign: 'center',
     },
     button: {
-      backgroundColor: '#00B900',
+      backgroundColor: '#6de67b',
       borderRadius: 8,
       padding: 16,
       alignItems: 'center',
@@ -168,7 +168,7 @@ export default function ForgotPasswordScreen({ navigation }) {
           </Text>
 
           {isLoading ? (
-            <ActivityIndicator size="large" color="#00B900" />
+            <ActivityIndicator size="large" color="#6de67b" />
           ) : (
             <>
               {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
