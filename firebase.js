@@ -76,8 +76,34 @@ try {
 const dbRef = {
   users: 'users',
   chats: 'chats',
-  messages: 'messages',
-  userChats: 'userChats'
+  recipes: 'recipes',
+  ingredients: 'ingredients',
+  userPreferences: 'userPreferences',
+  faqs: 'faqs'
+};
+
+// ตัวอย่างโครงสร้างข้อมูล
+const recipeSchema = {
+  id: 'string',
+  name: 'string',
+  category: 'string', // FOOD_CATEGORIES
+  difficulty: 'string', // DIFFICULTY_LEVELS
+  ingredients: ['string'],
+  steps: ['string'],
+  cookingTime: 'number',
+  servings: 'number',
+  allergens: ['string'],
+  createdAt: 'timestamp',
+  updatedAt: 'timestamp'
+};
+
+const userPreferencesSchema = {
+  userId: 'string',
+  allergies: ['string'],
+  avoidIngredients: ['string'],
+  preferredCategories: ['string'],
+  skillLevel: 'string',
+  updatedAt: 'timestamp'
 };
 
 export { db, auth, database, dbRef, cleanup };

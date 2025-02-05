@@ -395,7 +395,9 @@ export default function HomeScreen({ navigation }) {
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
+      paddingTop: Platform.OS === 'android' 
+        ? StatusBar.currentHeight + 16  // เพิ่มเป็น +16 เหมือนหน้าตั้งค่า
+        : 50,  // เพิ่มเป็น 50 เหมือนหน้าตั้งค่า
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
       backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
@@ -405,6 +407,11 @@ export default function HomeScreen({ navigation }) {
       shadowOpacity: 0.1,
       shadowRadius: 3,
     },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
     headerTitle: {
       fontSize: 28,
       fontWeight: '700',
@@ -413,18 +420,9 @@ export default function HomeScreen({ navigation }) {
     headerButtons: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
-    },
-    headerRight: {
-      flexDirection: 'row',
       gap: 8,
     },
     headerButton: {
-      padding: 8,
-      borderRadius: 12,
-      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
-    },
-    logoutButton: {
       padding: 8,
       borderRadius: 12,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
@@ -715,31 +713,41 @@ export default function HomeScreen({ navigation }) {
   }), [isDarkMode]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <Animated.View style={{ opacity: fadeAnim }}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Chatbot</Text>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>Chatbot</Text>
+          </View>
           <View style={styles.headerButtons}>
-            <View style={styles.headerRight}>
-              <TouchableOpacity 
-                style={styles.headerButton}
-                onPress={() => navigation.navigate('PinnedMessages')}
-              >
-                <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.headerButton}
-                onPress={toggleTheme}
-              >
-                <MaterialIcons 
-                  name={isDarkMode ? 'light-mode' : 'dark-mode'} 
-                  size={24} 
-                  color={isDarkMode ? '#FFFFFF' : '#000000'} 
-                />
-              </TouchableOpacity>
-            </View>
             <TouchableOpacity 
-              style={styles.logoutButton}
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('PinnedMessages')}
+            >
+              <MaterialIcons name="push-pin" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={toggleTheme}
+            >
+              <MaterialIcons 
+                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('UserPreferences')}
+            >
+              <MaterialIcons 
+                name="settings" 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
               onPress={handleLogout}
             >
               <MaterialIcons name="logout" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
@@ -867,6 +875,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }

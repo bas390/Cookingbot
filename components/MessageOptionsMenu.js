@@ -7,13 +7,14 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
 const { height } = Dimensions.get('window');
 
-const MessageOptionsMenu = ({ visible, onClose, onCopy, onSelect }) => {
+const MessageOptionsMenu = ({ visible, onClose, onCopy, onSelect, onAddTag }) => {
   const { isDarkMode } = useTheme();
   const translateY = React.useRef(new Animated.Value(height)).current;
 
@@ -37,56 +38,55 @@ const MessageOptionsMenu = ({ visible, onClose, onCopy, onSelect }) => {
   if (!visible) return null;
 
   return (
-    <TouchableOpacity
-      style={styles.overlay}
-      activeOpacity={1}
-      onPress={onClose}
+    <Modal
+      visible={visible}
+      transparent={true}
+      onRequestClose={onClose}
     >
-      <Animated.View
-        style={[
-          styles.container,
-          {
-            transform: [{ translateY }],
-            backgroundColor: isDarkMode ? '#333333' : '#FFFFFF',
-          },
-        ]}
+      <TouchableOpacity
+        style={styles.overlay}
+        onPress={onClose}
+        activeOpacity={1}
       >
-        <View style={styles.handle} />
-        <TouchableOpacity
-          style={styles.option}
-          onPress={() => {
-            onCopy();
-            onClose();
-          }}
-        >
-          <MaterialIcons
-            name="content-copy"
-            size={24}
-            color={isDarkMode ? '#FFFFFF' : '#000000'}
-          />
-          <Text style={[styles.optionText, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
-            คัดลอกข้อความ
-          </Text>
-        </TouchableOpacity>
+        <View style={[
+          styles.menu,
+          { backgroundColor: isDarkMode ? '#333' : '#FFFFFF' }
+        ]}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              onCopy();
+              onClose();
+            }}
+          >
+            <MaterialIcons name="content-copy" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            <Text style={[styles.menuText, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>คัดลอก</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.option}
-          onPress={() => {
-            onSelect();
-            onClose();
-          }}
-        >
-          <MaterialIcons
-            name="check-box-outline-blank"
-            size={24}
-            color={isDarkMode ? '#FFFFFF' : '#000000'}
-          />
-          <Text style={[styles.optionText, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
-            เลือกข้อความ
-          </Text>
-        </TouchableOpacity>
-      </Animated.View>
-    </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              onSelect();
+              onClose();
+            }}
+          >
+            <MaterialIcons name="check-box-outline-blank" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            <Text style={[styles.menuText, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>เลือก</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              onAddTag();
+              onClose();
+            }}
+          >
+            <MaterialIcons name="local-offer" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            <Text style={[styles.menuText, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>เพิ่มแท็ก</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
   );
 };
 
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     zIndex: 1000,
   },
-  container: {
+  menu: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 16,
@@ -115,13 +115,13 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 16,
   },
-  option: {
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     gap: 16,
   },
-  optionText: {
+  menuText: {
     fontSize: 16,
     fontWeight: '500',
   },

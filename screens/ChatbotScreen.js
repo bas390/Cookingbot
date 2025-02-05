@@ -12,19 +12,18 @@ import {
   Alert,
   Animated,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs, doc, orderBy, startAfter, limit, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs, doc, orderBy, startAfter, limit, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { OPENAI_API_KEY } from '@env';
 import axios from 'axios';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute } from '@react-navigation/native';
-import { SafeAreaView as RNSSafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useTheme } from '../context/ThemeContext';
 import { playNotificationSound, playTimerSound } from '../utils/soundUtils';
@@ -36,6 +35,8 @@ import CustomPopup from '../components/CustomPopup';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import MessageOptionsMenu from '../components/MessageOptionsMenu';
 import { Keyboard } from 'react-native';
+import { extractIngredients, findRecipesByIngredients, rankRecipesByIngredients } from '../utils/recipeUtils';
+import { findFAQAnswer } from '../utils/faqUtils';
 
 // BotTyping Component
 const BotTyping = () => {
@@ -48,7 +49,7 @@ const BotTyping = () => {
         if (prev.length >= 3) return '';
         return prev + '.';
       });
-    }, 500);
+    }, []);
 
     return () => clearInterval(interval);
   }, []);
@@ -204,13 +205,17 @@ export default function ChatbotScreen({ navigation, route }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [selectedMessageText, setSelectedMessageText] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [userPreferences, setUserPreferences] = useState(null);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [showTagInput, setShowTagInput] = useState(false);
+  const [newTag, setNewTag] = useState('');
+  const [selectedMessageId, setSelectedMessageId] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [allTags, setAllTags] = useState([]);
 
   // สร้าง styles ด้วย useMemo
   const styles = useMemo(() => StyleSheet.create({
-    safeArea: {
-      flex: 1,
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
-    },
     container: {
       flex: 1,
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
@@ -221,7 +226,9 @@ export default function ChatbotScreen({ navigation, route }) {
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
+      paddingTop: Platform.OS === 'android' 
+        ? StatusBar.currentHeight + 16
+        : 50,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
       backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
@@ -249,7 +256,7 @@ export default function ChatbotScreen({ navigation, route }) {
     headerButtons: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: 8,
     },
     headerButton: {
       padding: 8,
@@ -525,6 +532,143 @@ export default function ChatbotScreen({ navigation, route }) {
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
       zIndex: 2,
     },
+    tagContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      marginTop: 8,
+      gap: 6,
+      alignItems: 'center', // เพิ่มเพื่อจัดให้อยู่กึ่งกลางแนวตั้ง
+    },
+    tag: {
+      backgroundColor: isDarkMode ? '#444' : '#F0F0F0',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#555' : '#E0E0E0',
+      minHeight: 26, // กำหนดความสูงขั้นต่ำ
+    },
+    tagText: {
+      color: isDarkMode ? '#CCC' : '#666',
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    addTagButton: {
+      backgroundColor: isDarkMode ? '#444' : '#F0F0F0',
+      width: 26, // เพิ่มขนาดให้เท่ากับความสูงของแท็ก
+      height: 26,
+      borderRadius: 13,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#555' : '#E0E0E0',
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    tagInputContainer: {
+      width: '80%',
+      borderRadius: 12,
+      padding: 16,
+    },
+    tagInputTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginBottom: 16,
+    },
+    tagInput: {
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 16,
+      marginBottom: 16,
+    },
+    tagInputButtons: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 8,
+    },
+    tagButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 8,
+    },
+    cancelButton: {
+      backgroundColor: '#999',
+    },
+    addButton: {
+      backgroundColor: '#6de67b',
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    searchResultsContainer: {
+      width: '90%',
+      maxHeight: '80%',
+      borderRadius: 20,
+      padding: 20,
+      elevation: 5,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
+    searchHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: isDarkMode ? '#444' : '#E5E5E5',
+      paddingBottom: 12,
+    },
+    searchTitle: {
+      fontSize: 20,
+      fontWeight: '600',
+    },
+    emptyText: {
+      textAlign: 'center',
+      marginTop: 32,
+      fontSize: 16,
+      color: isDarkMode ? '#999' : '#666',
+    },
+    tagsList: {
+      marginBottom: 16,
+      paddingVertical: 8,
+    },
+    tagChip: {
+      backgroundColor: isDarkMode ? '#444' : '#F0F0F0',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      marginRight: 10,
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#555' : '#E0E0E0',
+    },
+    tagChipText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    tagChipActive: {
+      backgroundColor: '#6de67b',
+      borderColor: '#5bc569',
+    },
+    tagChipTextActive: {
+      color: '#000000',
+    },
+    searchResultsTitle: {
+      fontSize: 16,
+      fontWeight: '500',
+      marginBottom: 12,
+      color: isDarkMode ? '#CCCCCC' : '#666666',
+    },
   }), [isDarkMode, isKeyboardVisible]);
 
   // โหลดข้อมูลแชทเมื่อเปิดหน้าจอ
@@ -536,7 +680,7 @@ export default function ChatbotScreen({ navigation, route }) {
         setIsLoading(true);
         setError(null);
 
-        const currentUser = auth.currentUser;
+    const currentUser = auth.currentUser;
         if (!currentUser) {
           navigation.replace('Login');
           return;
@@ -578,17 +722,33 @@ export default function ChatbotScreen({ navigation, route }) {
     loadMessages();
   }, [chatId]);
 
+  // เพิ่ม useEffect เพื่อดึงข้อมูลตั้งค่า
+  useEffect(() => {
+    const loadUserPreferences = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+        if (userDoc.exists()) {
+          setUserPreferences(userDoc.data().preferences || {});
+        }
+      } catch (error) {
+        console.error('Error loading preferences:', error);
+      }
+    };
+
+    loadUserPreferences();
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim() || isSending) return;
-
-    const currentUser = auth.currentUser;
-    if (!currentUser || !chatId) return;
 
     try {
       setIsSending(true);
       haptics.light();
-      
-      // ส่งข้อความของผู้ใช้
+
+      const currentUser = auth.currentUser;
+      if (!currentUser || !chatId) return;
+
+      // ส่งข้อความผู้ใช้ทันที
       const messagesRef = collection(db, 'chats');
       const userMessage = {
         text: input.trim(),
@@ -605,10 +765,7 @@ export default function ChatbotScreen({ navigation, route }) {
       // แสดงสถานะกำลังพิมพ์
       setIsTyping(true);
 
-      // หน่วงเวลาเพื่อจำลองการพิมพ์
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // สร้างคำตอบของบอท
+      // ส่งคำตอบบอททันทีที่ได้รับ
       const botResponse = useGPT ? 
         await getChatGPTResponse(input) : 
         getSimpleResponse(input);
@@ -624,14 +781,13 @@ export default function ChatbotScreen({ navigation, route }) {
 
       await addDoc(messagesRef, botMessage);
       haptics.success();
-      
+
     } catch (error) {
-      console.error('Error sending message:', error);
-      haptics.error();
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถส่งข้อความได้ กรุณาลองใหม่อีกครั้ง');
+      console.error('Error in handleSend:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถส่งข้อความได้');
     } finally {
       setIsSending(false);
-      setIsTyping(false); // ปิดสถานะกำลังพิมพ์
+      setIsTyping(false);
     }
   };
 
@@ -648,7 +804,22 @@ export default function ChatbotScreen({ navigation, route }) {
           messages: [
             {
               role: "system",
-              content: "คุณเป็นผู้เชี่ยวชาญด้านการทำอาหาร คอยให้คำแนะนำเกี่ยวกับการทำอาหาร สูตรอาหาร และเทคนิคการทำอาหารต่างๆ"
+              content: `คุณเป็นผู้เชี่ยวชาญด้านอาหารไทยและอาหารนานาชาติ 
+
+            ข้อมูลผู้ใช้:
+            - แพ้อาหารเหล่านี้: ${userPreferences?.allergies?.join(', ') || 'ไม่มี'} 
+            - ไม่ทานอาหารเหล่านี้: ${userPreferences?.restrictions?.join(', ') || 'ไม่มี'}
+            - ระดับความเชี่ยวชาญ: ${userPreferences?.skillLevel || 'ระดับเริ่มต้น'}
+
+            คำแนะนำในการตอบ:
+            1. ห้ามแนะนำเมนูที่มีส่วนประกอบที่ผู้ใช้แพ้หรือไม่ทาน
+            2. ปรับความละเอียดของคำอธิบายตามระดับความเชี่ยวชาญ
+            3. อธิบายเทคนิคการทำอาหารไทยอย่างละเอียด เช่น:
+               - การปรุงรส้ห้สมดุล (เปรี้ยว หวาน เค็ม เผ็ด)
+               - เทคนิคการสับ ตำ โขลก คั่ว
+               - การเลือกและเตรียมวัตถุดิบ
+               - ขั้นตอนที่ต้องระวังเป็นพิเศษ
+            4. แนะนำเครื่องปรุงและสมุนไพรไทยที่สำคัญ`
             },
             {
               role: "user",
@@ -656,7 +827,7 @@ export default function ChatbotScreen({ navigation, route }) {
             }
           ],
           temperature: 0.7,
-          max_tokens: 500
+          max_tokens: 2000
         })
       });
 
@@ -1114,11 +1285,39 @@ export default function ChatbotScreen({ navigation, route }) {
     }
   };
 
-  const handleLongPress = (text) => {
+  const handleLongPress = (message) => {  // รับ message object แทน text
     if (!isSelectionMode) {
-      setSelectedMessageText(text);
+      setSelectedMessageText(message.text);
+      setSelectedMessageId(message.id);  // เพิ่มการเก็บ ID
       setMenuVisible(true);
     }
+  };
+
+  const renderTags = (message) => {
+    if (!message.tags) return null;
+    
+    return (
+      <View style={styles.tagContainer}>
+        {message.tags.map((tag, index) => (
+          <View key={index} style={styles.tag}>
+            <Text style={styles.tagText}>#{tag}</Text>
+          </View>
+        ))}
+        <TouchableOpacity 
+          style={styles.addTagButton}
+          onPress={() => {
+            setShowTagInput(true);
+            setSelectedMessageId(message.id);
+          }}
+        >
+          <MaterialIcons 
+            name="add" 
+            size={14} 
+            color={isDarkMode ? '#CCC' : '#666'} 
+          />
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const renderMessage = ({ item }) => {
@@ -1128,9 +1327,9 @@ export default function ChatbotScreen({ navigation, route }) {
     // แก้ไขการแสดงเวลา
     const messageTime = item.createdAt 
       ? new Date(item.createdAt).toLocaleTimeString('th-TH', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
         })
       : '';
 
@@ -1144,7 +1343,7 @@ export default function ChatbotScreen({ navigation, route }) {
       <TouchableOpacity
         style={[styles.messageRow, isUser ? styles.userRow : styles.botRow]}
         onPress={handlePress}
-        onLongPress={() => handleLongPress(item.text)}
+        onLongPress={() => handleLongPress(item)}  // ส่ง message object ทั้งก้อน
         delayLongPress={500}
         activeOpacity={0.7}
       >
@@ -1160,57 +1359,58 @@ export default function ChatbotScreen({ navigation, route }) {
         )}
         <View
           style={[
-            styles.messageBubble,
-            isUser ? styles.userBubble : styles.botBubble,
-            item.timer && styles.timerBubble,
+          styles.messageBubble,
+          isUser ? styles.userBubble : styles.botBubble,
+          item.timer && styles.timerBubble,
             item.isPinned && styles.pinnedBubble,
             isSelected && styles.selectedBubble,
           ]}
         >
           <View style={styles.messageContent}>
-            {item.isPinned && (
-              <View style={styles.pinnedIndicator}>
-                <MaterialIcons 
-                  name="push-pin" 
-                  size={14} 
-                  color="#FFD700" 
-                  style={styles.pinnedIcon}
-                />
-                <Text style={styles.pinnedText}>ปักหมุด</Text>
+          {item.isPinned && (
+            <View style={styles.pinnedIndicator}>
+              <MaterialIcons 
+                name="push-pin" 
+                size={14} 
+                color="#FFD700" 
+                style={styles.pinnedIcon}
+              />
+              <Text style={styles.pinnedText}>ปักหมุด</Text>
+            </View>
+          )}
+          <Text style={isUser ? styles.userText : styles.botText}>
+            {item.text}
+          </Text>
+          {item.timer && (
+            <View style={styles.timerContainer}>
+              <Text style={styles.timerText}>
+                {formatTime(item.timer.remainingTime)}
+              </Text>
+              <View style={styles.timerButtons}>
+                <TouchableOpacity
+                  style={styles.timerButton}
+                  onPress={() => item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id)}
+                >
+                  <MaterialIcons
+                    name={item.timer.isRunning ? 'pause' : 'play-arrow'}
+                    size={20}
+                    color={isDarkMode ? '#FFFFFF' : '#000000'}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.timerButton}
+                  onPress={() => resetTimer(item.id)}
+                >
+                  <MaterialIcons
+                    name="refresh"
+                    size={20}
+                    color={isDarkMode ? '#FFFFFF' : '#000000'}
+                  />
+                </TouchableOpacity>
               </View>
-            )}
-            <Text style={isUser ? styles.userText : styles.botText}>
-              {item.text}
-            </Text>
-            {item.timer && (
-              <View style={styles.timerContainer}>
-                <Text style={styles.timerText}>
-                  {formatTime(item.timer.remainingTime)}
-                </Text>
-                <View style={styles.timerButtons}>
-                  <TouchableOpacity
-                    style={styles.timerButton}
-                    onPress={() => item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id)}
-                  >
-                    <MaterialIcons
-                      name={item.timer.isRunning ? 'pause' : 'play-arrow'}
-                      size={20}
-                      color={isDarkMode ? '#FFFFFF' : '#000000'}
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.timerButton}
-                    onPress={() => resetTimer(item.id)}
-                  >
-                    <MaterialIcons
-                      name="refresh"
-                      size={20}
-                      color={isDarkMode ? '#FFFFFF' : '#000000'}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            </View>
+          )}
+            {renderTags(item)}
           </View>
           <View style={styles.messageFooter}>
             <Text style={[
@@ -1329,7 +1529,7 @@ export default function ChatbotScreen({ navigation, route }) {
       if (chatId) {
         // อัพเดต Firestore
         const messageRef = doc(db, 'chats', messageId);
-        await updateDoc(messageRef, {
+          await updateDoc(messageRef, {
           isPinned: newPinnedStatus,
           pinnedAt: newPinnedStatus ? new Date().toISOString() : null,
         });
@@ -1338,11 +1538,11 @@ export default function ChatbotScreen({ navigation, route }) {
       // อัพเดต local state
       setMessages(prev =>
         prev.map(msg =>
-          msg.id === messageId
+              msg.id === messageId 
             ? { ...msg, isPinned: newPinnedStatus }
-            : msg
-        )
-      );
+                : msg
+            )
+          );
 
       // แสดง popup แจ้งเตือน
       setPopupMessage(newPinnedStatus ? 'ปักหมุดข้อความแล้ว' : 'ยกเลิกการปักหมุดแล้ว');
@@ -1364,7 +1564,7 @@ export default function ChatbotScreen({ navigation, route }) {
         pinnedAt: null
       });
       
-      // อัพเดท state ทันที
+      // อัพเดต state ทันที
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === messageId 
@@ -1433,13 +1633,122 @@ export default function ChatbotScreen({ navigation, route }) {
     };
   }, []);
 
+  // เพิ่มฟังก์ชันแนะนำเมนูตามวัตถุดิบ
+  const suggestRecipesByIngredients = async (ingredients) => {
+    try {
+      const recipesRef = collection(db, 'recipes');
+      const q = query(
+        recipesRef,
+        where('ingredients', 'array-contains-any', ingredients)
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error suggesting recipes:', error);
+      return [];
+    }
+  };
+
+  // เพิ่มฟังก์ชันตอบคำถามอัตโนมัติ
+  const getAutoResponse = async (question) => {
+    try {
+      const faqsRef = collection(db, 'faqs');
+      const q = query(
+        faqsRef,
+        where('keywords', 'array-contains-any', question.toLowerCase().split(' '))
+      );
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        return snapshot.docs[0].data().answer;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting FAQ:', error);
+      return null;
+    }
+  };
+
+  // เพิ่มแท็กให้ข้อความ
+  const addTag = async (messageId, tag) => {
+    try {
+      // ตรวจสอบว่ามี messageId หรือไม่
+      if (!messageId) {
+        console.error('No message ID provided');
+        Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเพิ่มแท็กได้ (ไม่พบ ID ข้อความ)');
+        return;
+      }
+
+      const messagesRef = collection(db, 'chats');
+      const messageRef = doc(messagesRef, messageId);
+      
+      await updateDoc(messageRef, {
+        tags: arrayUnion(tag)
+      });
+      
+      haptics.light();
+      setShowTagInput(false);
+      setNewTag('');
+    } catch (error) {
+      console.error('Error adding tag:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเพิ่มแท็กได้');
+    }
+  };
+
+  // ค้นหาข้อความตามแท็ก
+  const searchByTags = async (tags) => {
+    try {
+      const messagesRef = collection(db, 'chats');
+      const q = query(
+        messagesRef,
+        where('tags', 'array-contains-any', tags)
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error searching by tags:', error);
+      return [];
+    }
+  };
+
+  // เพิ่มฟังก์ชันดึงแท็กทั้งหมด
+  const fetchAllTags = async () => {
+    try {
+      const messagesRef = collection(db, 'chats');
+      const q = query(messagesRef, where('userId', '==', auth.currentUser.uid));
+      const snapshot = await getDocs(q);
+      
+      // รวบรวมแท็กทั้งหมดจากข้อความ
+      const tags = new Set();
+      snapshot.docs.forEach(doc => {
+        const messageTags = doc.data().tags || [];
+        messageTags.forEach(tag => tags.add(tag));
+      });
+      
+      setAllTags(Array.from(tags));
+    } catch (error) {
+      console.error('Error fetching tags:', error);
+    }
+  };
+
+  // เพิ่ม useEffect
+  useEffect(() => {
+    if (showSearchResults) {
+      fetchAllTags();
+    }
+  }, [showSearchResults]);
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
-      <RNSSafeAreaView edges={['top']} style={styles.safeArea}>
+      <View style={styles.container}>
         <CustomPopup
           visible={popupVisible}
           message={popupMessage}
@@ -1453,135 +1762,282 @@ export default function ChatbotScreen({ navigation, route }) {
             setIsSelectionMode(true);
             handleSelectMessage(selectedMessageText);
           }}
+          onAddTag={() => {
+            if (selectedMessageId) {  // เพิ่มการตรวจสอบ
+              setShowTagInput(true);
+              setSelectedMessageId(selectedMessageId);
+            } else {
+              Alert.alert('ข้อผิดพลาด', 'กรุณาเลือกข้อความก่อนเพิ่มแท็ก');
+            }
+          }}
         />
 
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <TouchableOpacity 
-                style={styles.backButton}
-                onPress={() => navigation.goBack()}
-              >
-                <MaterialIcons name="arrow-back" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-              </TouchableOpacity>
-              <View>
-                <Text style={styles.headerTitle}>
-                  {route.params?.title || 'Chat'}
-                </Text>
-                {!isOnline && (
-                  <Text style={styles.offlineText}>
-                    ออฟไลน์ - โหมดอ่านอย่างเดียว
-                  </Text>
-                )}
-              </View>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <MaterialIcons 
+                name="arrow-back" 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{route.params?.title || 'Chat'}</Text>
             </View>
 
-            <View style={styles.headerButtons}>
-              <TouchableOpacity 
-                style={styles.headerButton}
-                onPress={clearMessages}
-              >
-                <MaterialIcons name="delete-outline" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.headerButton}
-                onPress={() => setUseGPT(!useGPT)}
-              >
-                <MaterialIcons 
-                  name={useGPT ? 'psychology' : 'psychology-alt'} 
-                  size={24} 
-                  color={isDarkMode ? '#FFFFFF' : '#000000'} 
-                />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.headerButton}
-                onPress={toggleTheme}
-              >
-                <MaterialIcons 
-                  name={isDarkMode ? 'light-mode' : 'dark-mode'} 
-                  size={24} 
-                  color={isDarkMode ? '#FFFFFF' : '#000000'} 
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          {isLoading ? (
-            <LoadingSkeleton />
-          ) : error ? (
-            <ErrorState error={error} onRetry={loadMoreMessages} />
-          ) : (
-            <View style={styles.chatContainer}>
-              <Animated.FlatList
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                  { useNativeDriver: true }
-                )}
-                data={[
-                  ...(isTyping ? [{ id: 'typing', isTyping: true }] : []),
-                  ...messages
-                ]}
-                renderItem={({ item }) => {
-                  if (item.isTyping) {
-                    return <BotTyping />;
-                  }
-                  return renderMessage({ item });
-                }}
-                keyExtractor={(item) => item.id}
-                ref={flatListRef}
-                inverted={true}
-                contentContainerStyle={[
-                  styles.chatContent,
-                  { paddingBottom: isKeyboardVisible ? 60 : Platform.OS === 'ios' ? 90 : 70 }
-                ]}
-                style={styles.messageList}
-                onEndReached={loadMoreMessages}
-                onEndReachedThreshold={0.5}
-                ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={isLoadingMore}
-                    onRefresh={loadMoreMessages}
-                    tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
-                  />
-                }
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={clearMessages}
+            >
+              <MaterialIcons name="delete-outline" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => setUseGPT(!useGPT)}
+            >
+              <MaterialIcons 
+                name={useGPT ? 'psychology' : 'psychology-alt'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
               />
-            </View>
-          )}
-
-          <View style={styles.inputContainer}>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                value={input}
-                onChangeText={handleInputChange}
-                placeholder="พิมพ์ข้อความ..."
-                placeholderTextColor="#999999"
-                multiline={false}
-                maxHeight={50}
-                onKeyPress={handleKeyPress}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={toggleTheme}
+            >
+              <MaterialIcons 
+                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
               />
-              
-              <TouchableOpacity 
-                style={[
-                  styles.sendButton,
-                  !input.trim() && styles.sendButtonDisabled
-                ]}
-                onPress={handleSend}
-                disabled={!input.trim()}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons
-                  name="arrow-upward"
-                  size={24}
-                  color={input.trim() ? '#FFFFFF' : isDarkMode ? '#666666' : '#999999'}
-                  style={styles.sendButtonIcon}
-                />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => {
+                setSearchResults([]); // เคลียร์ผลการค้นหาเก่า
+                setShowSearchResults(true); // เปิด Modal (จะทริกเกอร์ useEffect ให้โหลดแท็ก)
+              }}
+            >
+              <MaterialIcons name="search" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+            </TouchableOpacity>
           </View>
         </View>
-      </RNSSafeAreaView>
+        
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : error ? (
+          <ErrorState error={error} onRetry={loadMoreMessages} />
+        ) : (
+          <View style={styles.chatContainer}>
+          <Animated.FlatList
+            onScroll={Animated.event(
+                [{ 
+                  nativeEvent: { 
+                    contentOffset: { y: scrollY } 
+                  }
+                }],
+              { useNativeDriver: true }
+            )}
+              data={[
+                ...(isTyping ? [{ id: 'typing', isTyping: true }] : []),
+                ...messages
+              ]}
+              renderItem={({ item }) => {
+                if (item.isTyping) {
+                  return <BotTyping />;
+                }
+                return renderMessage({ item });
+              }}
+            keyExtractor={(item) => item.id}
+            ref={flatListRef}
+            inverted={true}
+              contentContainerStyle={[
+                styles.chatContent,
+                { paddingBottom: isKeyboardVisible ? 60 : Platform.OS === 'ios' ? 90 : 70 }
+              ]}
+            style={styles.messageList}
+            onEndReached={loadMoreMessages}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
+            refreshControl={
+              <RefreshControl
+                refreshing={isLoadingMore}
+                onRefresh={loadMoreMessages}
+                tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
+              />
+            }
+          />
+          </View>
+        )}
+
+        <View style={styles.inputContainer}>
+          <View style={styles.inputWrapper}>
+          <TextInput
+            style={styles.input}
+            value={input}
+              onChangeText={handleInputChange}
+            placeholder="พิมพ์ข้อความ..."
+            placeholderTextColor="#999999"
+            multiline={false}
+            maxHeight={50}
+              onKeyPress={handleKeyPress}
+          />
+            
+          <TouchableOpacity 
+              style={[
+                styles.sendButton,
+                !input.trim() && styles.sendButtonDisabled
+              ]}
+            onPress={handleSend}
+            disabled={!input.trim()}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons
+                name="arrow-upward"
+                size={24}
+                color={input.trim() ? '#FFFFFF' : isDarkMode ? '#666666' : '#999999'}
+                style={styles.sendButtonIcon}
+              />
+          </TouchableOpacity>
+      </View>
+      </View>
+
+        <Modal
+          visible={showTagInput}
+          transparent={true}
+          onRequestClose={() => setShowTagInput(false)}
+        >
+          <TouchableOpacity 
+            style={styles.overlay}
+            onPress={() => setShowTagInput(false)}
+            activeOpacity={1}
+          >
+            <View style={[
+              styles.tagInputContainer,
+              { backgroundColor: isDarkMode ? '#333' : '#FFFFFF' }
+            ]}>
+              <Text style={[
+                styles.tagInputTitle,
+                { color: isDarkMode ? '#FFFFFF' : '#000000' }
+              ]}>
+                เพิ่มแท็ก
+              </Text>
+              <TextInput
+                style={[
+                  styles.tagInput,
+                  { 
+                    color: isDarkMode ? '#FFFFFF' : '#000000',
+                    backgroundColor: isDarkMode ? '#444' : '#F5F5F5'
+                  }
+                ]}
+                value={newTag}
+                onChangeText={setNewTag}
+                placeholder="พิมพ์แท็ก..."
+                placeholderTextColor="#999"
+                autoFocus
+              />
+              <View style={styles.tagInputButtons}>
+                <TouchableOpacity 
+                  style={[styles.tagButton, styles.cancelButton]}
+                  onPress={() => {
+                    setShowTagInput(false);
+                    setNewTag('');
+                  }}
+                >
+                  <Text style={styles.buttonText}>ยกเลิก</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.tagButton, styles.addButton]}
+                  onPress={() => {
+                    if (newTag.trim()) {
+                      addTag(selectedMessageId, newTag.trim());
+                    }
+                  }}
+                >
+                  <Text style={styles.buttonText}>เพิ่ม</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        <Modal
+          visible={showSearchResults}
+          transparent={true}
+          onRequestClose={() => setShowSearchResults(false)}
+          animationType="fade"
+        >
+          <View style={styles.overlay}>
+            <View style={[
+              styles.searchResultsContainer,
+              { backgroundColor: isDarkMode ? '#222' : '#FFFFFF' }
+            ]}>
+              <View style={styles.searchHeader}>
+                <Text style={[
+                  styles.searchTitle,
+                  { color: isDarkMode ? '#FFFFFF' : '#000000' }
+                ]}>
+                  ค้นหาตามแท็ก
+                </Text>
+                <TouchableOpacity onPress={() => setShowSearchResults(false)}>
+                  <MaterialIcons name="close" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsList}>
+                {allTags.map((tag, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.tagChip,
+                      searchResults.some(msg => msg.tags?.includes(tag)) && styles.tagChipActive
+                    ]}
+                    onPress={async () => {
+                      try {
+                        const results = await searchByTags([tag]);
+                        const filteredResults = results.filter(msg => msg.chatId === chatId);
+                        setSearchResults(filteredResults.reverse()); // เรียงลำดับใหม่
+                      } catch (error) {
+                        console.error('Error searching tags:', error);
+                      }
+                    }}
+                  >
+                    <Text style={[
+                      styles.tagChipText,
+                      searchResults.some(msg => msg.tags?.includes(tag)) && styles.tagChipTextActive
+                    ]}>
+                      #{tag}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {searchResults.length > 0 ? (
+                <>
+                  <Text style={styles.searchResultsTitle}>
+                    ผลการค้นหา ({searchResults.length})
+                  </Text>
+                  <FlatList
+                    data={searchResults}
+                    renderItem={renderMessage}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    inverted={false} // ไม่กลับด้าน
+                    style={{ maxHeight: '70%' }} // จำกัดความสูง
+                  />
+                </>
+              ) : (
+                <Text style={styles.emptyText}>
+                  เลือกแท็กเพื่อดูข้อความ
+                </Text>
+              )}
+            </View>
+          </View>
+        </Modal>
+      </View>
     </KeyboardAvoidingView>
   );
 }

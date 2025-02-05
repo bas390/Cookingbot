@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Image,
   Alert,
-  SafeAreaView,
   Platform,
   StatusBar,
 } from 'react-native';
@@ -133,7 +132,9 @@ export default function PinnedMessagesScreen({ navigation }) {
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16,
+      paddingTop: Platform.OS === 'android' 
+        ? StatusBar.currentHeight + 16
+        : 50,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#333' : '#E5E5E5',
       backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
@@ -268,7 +269,7 @@ export default function PinnedMessagesScreen({ navigation }) {
   }), [isDarkMode]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity 
@@ -301,6 +302,6 @@ export default function PinnedMessagesScreen({ navigation }) {
           contentContainerStyle={{ paddingVertical: 8 }}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 } 

@@ -8,6 +8,7 @@ import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import PinnedMessagesScreen from './screens/PinnedMessagesScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import UserPreferencesScreen from './screens/UserPreferencesScreen';
 import { cleanup } from './firebase';
 import { Easing } from 'react-native';
 
@@ -58,6 +59,7 @@ function AppNavigator() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Chatbot" component={ChatbotScreen} />
       <Stack.Screen name="PinnedMessages" component={PinnedMessagesScreen} />
+      <Stack.Screen name="UserPreferences" component={UserPreferencesScreen} />
     </Stack.Navigator>
   );
 }
