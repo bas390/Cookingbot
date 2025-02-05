@@ -11,6 +11,7 @@ import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import UserPreferencesScreen from './screens/UserPreferencesScreen';
 import { cleanup } from './firebase';
 import { Easing } from 'react-native';
+import { initSounds, cleanupSounds } from './utils/soundUtils';
 
 const Stack = createStackNavigator();
 
@@ -66,8 +67,12 @@ function AppNavigator() {
 
 export default function App() {
   useEffect(() => {
+    // เริ่มต้นระบบเสียง
+    initSounds();
+
     return () => {
-      cleanup();
+      // ทำความสะอาดเมื่อปิดแอพ
+      cleanupSounds();
     };
   }, []);
 

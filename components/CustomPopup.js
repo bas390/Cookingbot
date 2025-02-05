@@ -19,14 +19,14 @@ const CustomPopup = ({ visible, message, onClose }) => {
       Animated.spring(animatedValue, {
         toValue: 1,
         useNativeDriver: true,
-        tension: 50,
-        friction: 7,
+        tension: 80,
+        friction: 9,
       }).start();
 
-      // Auto hide after 2 seconds
+      // Auto hide after 1.5 seconds
       const timer = setTimeout(() => {
         hidePopup();
-      }, 2000);
+      }, 1500);
 
       return () => clearTimeout(timer);
     }
@@ -35,7 +35,7 @@ const CustomPopup = ({ visible, message, onClose }) => {
   const hidePopup = () => {
     Animated.timing(animatedValue, {
       toValue: 0,
-      duration: 300,
+      duration: 200,
       useNativeDriver: true,
     }).start(() => onClose());
   };
@@ -57,15 +57,15 @@ const CustomPopup = ({ visible, message, onClose }) => {
                 }),
               },
             ],
-            backgroundColor: isDarkMode ? '#333333' : '#FFFFFF',
+            backgroundColor: isDarkMode ? 'rgba(51, 51, 51, 0.95)' : 'rgba(0, 0, 0, 0.85)',
           },
         ]}
       >
         <View style={styles.content}>
-          <View style={styles.iconContainer}>
-            <MaterialIcons name="content-copy" size={24} color="#FFFFFF" />
-          </View>
-          <Text style={[styles.message, { color: isDarkMode ? '#FFFFFF' : '#000000' }]}>
+          <Text style={[
+            styles.message, 
+            { color: '#FFFFFF' }
+          ]}>
             {message}
           </Text>
         </View>
@@ -77,43 +77,37 @@ const CustomPopup = ({ visible, message, onClose }) => {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20,
-    left: 0,
-    right: 0,
+    top: Platform.OS === 'ios' ? 90 : 60,
+    left: 16,
+    right: 16,
     alignItems: 'center',
     zIndex: 1000,
+    pointerEvents: 'none',
   },
   popup: {
-    width: '90%',
-    maxWidth: 400,
-    borderRadius: 12,
+    minWidth: 120,
+    maxWidth: '80%',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
     elevation: 5,
   },
   content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#6de67b',
-    justifyContent: 'center',
     alignItems: 'center',
   },
   message: {
-    flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
+    textAlign: 'center',
+    color: '#FFFFFF',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
+  Easing,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, query, onSnapshot, addDoc, deleteDoc, where, getDocs, doc, orderBy, startAfter, limit, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
@@ -23,10 +24,9 @@ import { db, auth } from '../firebase';
 import { OPENAI_API_KEY } from '@env';
 import axios from 'axios';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRoute } from '@react-navigation/native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useTheme } from '../context/ThemeContext';
-import { playNotificationSound, playTimerSound } from '../utils/soundUtils';
+import { playNotificationSound, playTimerSound, playSendSound, playReceiveSound } from '../utils/soundUtils';
 import { haptics } from '../utils/haptics';
 import ErrorState from '../components/ErrorState';
 import LoadingSkeleton from '../components/LoadingSkeleton';
@@ -37,37 +37,50 @@ import MessageOptionsMenu from '../components/MessageOptionsMenu';
 import { Keyboard } from 'react-native';
 import { extractIngredients, findRecipesByIngredients, rankRecipesByIngredients } from '../utils/recipeUtils';
 import { findFAQAnswer } from '../utils/faqUtils';
+import { SlideInRight, SlideInLeft, FadeIn, FadeOut, withSpring, runOnJS } from 'react-native-reanimated';
 
 // BotTyping Component
 const BotTyping = () => {
-  const [dots, setDots] = useState('');
   const { isDarkMode } = useTheme();
+  const dotAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots(prev => {
-        if (prev.length >= 3) return '';
-        return prev + '.';
-      });
-    }, []);
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dotAnimation, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        Animated.timing(dotAnimation, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ])
+    );
 
-    return () => clearInterval(interval);
+    animation.start();
+    return () => animation.stop();
   }, []);
 
   const styles = StyleSheet.create({
     messageRow: {
       flexDirection: 'row',
-      marginVertical: 4,
-      paddingHorizontal: 16,
+      marginVertical: 2,
+      paddingHorizontal: 8,
+      alignItems: 'flex-start',
     },
     botRow: {
       justifyContent: 'flex-start',
     },
     avatarContainer: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      marginRight: 8,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      marginRight: 4,
       backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
       justifyContent: 'center',
       alignItems: 'center',
@@ -75,9 +88,9 @@ const BotTyping = () => {
       borderColor: isDarkMode ? '#333' : '#E5E5E5',
     },
     chefImage: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
     },
     statusDot: {
       position: 'absolute',
@@ -94,14 +107,19 @@ const BotTyping = () => {
       padding: 12,
       borderRadius: 16,
       maxWidth: '80%',
-    },
-    botBubble: {
       backgroundColor: isDarkMode ? '#333333' : '#F5F5F5',
       borderTopLeftRadius: 4,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginLeft: 4,
     },
-    messageText: {
-      fontSize: 16,
-      lineHeight: 22,
+    typingDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: isDarkMode ? '#FFFFFF80' : '#00000080',
+      marginHorizontal: 2,
     },
   });
 
@@ -115,17 +133,30 @@ const BotTyping = () => {
         />
         <View style={styles.statusDot} />
       </View>
-      <View style={[
-        styles.messageBubble,
-        styles.botBubble,
-        { maxWidth: '50%' }
-      ]}>
-        <Text style={[
-          styles.messageText,
-          { color: isDarkMode ? '#CCCCCC' : '#666666' }
-        ]}>
-          กำลังพิมพ์{dots}
-        </Text>
+      <View style={styles.messageBubble}>
+        {[0, 1, 2].map((index) => (
+          <Animated.View
+            key={index}
+            style={[
+              styles.typingDot,
+              {
+                opacity: dotAnimation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.3, 0.7],
+                }),
+                transform: [
+                  {
+                    translateY: dotAnimation.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0, -3, 0],
+                      extrapolate: 'clamp',
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+        ))}
       </View>
     </View>
   );
@@ -152,15 +183,17 @@ const staticStyles = StyleSheet.create({
   },
   messageRow: {
     flexDirection: 'row',
-    marginVertical: 4,
-    paddingHorizontal: 16,
+    marginVertical: 2,
+    paddingHorizontal: 8,
+    alignItems: 'flex-start',
   },
   userRow: {
     justifyContent: 'flex-end',
   },
   userText: {
     color: '#000000',
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 20,
   },
   userTimestamp: {
     color: 'rgba(0,0,0,0.7)',
@@ -173,9 +206,65 @@ const staticStyles = StyleSheet.create({
 });
 
 const Message = React.memo(({ message, onPin, onDelete }) => {
+  const { isDarkMode } = useTheme();
+  const isUser = message.sender === 'user';
+
+  const enteringAnimation = isUser ? 
+    SlideInRight.duration(300).springify() : 
+    SlideInLeft.duration(300).springify();
+
   return (
-    <Animated.View entering={SlideInRight} exiting={SlideOutLeft}>
-      {/* existing message JSX */}
+    <Animated.View 
+      entering={enteringAnimation}
+      style={[
+        styles.messageRow,
+        isUser ? styles.userRow : styles.botRow
+      ]}
+    >
+      {!isUser && (
+        <View style={styles.avatarContainer}>
+          <Image 
+            source={require('../assets/icon.png')} 
+            style={styles.chefImage}
+            resizeMode="contain"
+          />
+          <View style={styles.statusDot} />
+        </View>
+      )}
+      
+      <Animated.View 
+        style={[
+          styles.messageBubble,
+          isUser ? styles.userBubble : styles.botBubble,
+          { transform: [{ scale: 1 }] } // เพื่อให้ animation ทำงานได้ดีขึ้น
+        ]}
+      >
+        <Text style={[
+          styles.messageText,
+          isUser ? styles.userText : styles.botText
+        ]}>
+          {message.text}
+        </Text>
+        <Text style={[
+          styles.timestamp,
+          isUser ? styles.userTimestamp : styles.botTimestamp
+        ]}>
+          {formatTimestamp(message.createdAt)}
+        </Text>
+      </Animated.View>
+
+      {isUser && (
+        <TouchableOpacity
+          style={styles.messageOptions}
+          onPress={() => onOptionsPress(message)}
+        >
+          <MaterialIcons 
+            name="more-vert" 
+            size={20} 
+            color={isDarkMode ? '#CCCCCC' : '#666666'} 
+          />
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 });
@@ -206,19 +295,86 @@ export default function ChatbotScreen({ navigation, route }) {
   const [selectedMessageText, setSelectedMessageText] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [userPreferences, setUserPreferences] = useState(null);
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [showTagInput, setShowTagInput] = useState(false);
-  const [newTag, setNewTag] = useState('');
   const [selectedMessageId, setSelectedMessageId] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [allTags, setAllTags] = useState([]);
+
+  // เพิ่ม state สำหรับ simple mode
+  const [isSimpleMode, setIsSimpleMode] = useState(false);
+
+  // เพิ่ม state สำหรับ animation
+  const [timerScale] = useState(new Animated.Value(1));
+  const [timerRotate] = useState(new Animated.Value(0));
+
+  // เพิ่ม useEffect สำหรับโหลดค่า GPT Mode
+  useEffect(() => {
+    const loadGPTMode = async () => {
+      try {
+        const savedMode = await AsyncStorage.getItem('useGPT');
+        if (savedMode !== null) {
+          setUseGPT(JSON.parse(savedMode));
+        }
+      } catch (error) {
+        console.error('Error loading GPT mode:', error);
+      }
+    };
+
+    loadGPTMode();
+  }, []);
+
+  // แก้ไขฟังก์ชันสลับโหมด
+  const toggleGPTMode = async () => {
+    try {
+      const newMode = !useGPT;
+      await AsyncStorage.setItem('useGPT', JSON.stringify(newMode));
+      setUseGPT(newMode);
+      
+      // แสดง popup แจ้งเตือนการเปลี่ยนโหมด
+      setPopupMessage(newMode ? 'เปลี่ยนเป็นโหมด AI แล้ว' : 'เปลี่ยนเป็นโหมดพื้นฐานแล้ว');
+      setPopupVisible(true);
+      
+      // สั่นเพื่อให้ feedback
+      haptics.medium();
+    } catch (error) {
+      console.error('Error saving GPT mode:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเปลี่ยนโหมดได้');
+    }
+  };
 
   // สร้าง styles ด้วย useMemo
   const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+    },
+    content: {
+      flex: 1,
+    },
+    messageList: {
+      flex: 1,
+    },
+    chatContent: {
+      paddingHorizontal: 8,
+    },
+    inputContainer: {
+      borderTopWidth: 1,
+      borderTopColor: isDarkMode ? '#333' : '#E5E5E5',
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+    },
+    inputWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      paddingBottom: Platform.OS === 'ios' ? 34 : 8,
+    },
+    input: {
+      flex: 1,
+      fontSize: 16,
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      borderRadius: 20,
+      marginRight: 8,
     },
     header: {
       flexDirection: 'row',
@@ -262,26 +418,29 @@ export default function ChatbotScreen({ navigation, route }) {
       padding: 8,
       borderRadius: 12,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
-    messageList: {
-      flex: 1,
-      paddingVertical: 8,
-      marginBottom: isKeyboardVisible ? 60 : Platform.OS === 'ios' ? 90 : 70,
-      zIndex: 1,
+    headerButtonText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+      fontSize: 14,
+      fontWeight: '500',
     },
     messageRow: {
       flexDirection: 'row',
-      marginVertical: 4,
-      paddingHorizontal: 16,
+      marginVertical: 2,
+      paddingHorizontal: 8,
+      alignItems: 'flex-start',
     },
     userRow: {
       justifyContent: 'flex-end',
     },
     avatarContainer: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      marginRight: 8,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      marginRight: 4,
       backgroundColor: isDarkMode ? '#2C2C2C' : '#F5F5F5',
       justifyContent: 'center',
       alignItems: 'center',
@@ -289,9 +448,9 @@ export default function ChatbotScreen({ navigation, route }) {
       borderColor: isDarkMode ? '#333' : '#E5E5E5',
     },
     chefImage: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
     },
     statusDot: {
       position: 'absolute',
@@ -305,35 +464,42 @@ export default function ChatbotScreen({ navigation, route }) {
       borderColor: isDarkMode ? '#121212' : '#FFFFFF',
     },
     messageBubble: {
-      maxWidth: '80%',
       padding: 12,
       borderRadius: 16,
-      marginVertical: 4,
-      elevation: 1,
+      maxWidth: '80%',
+      marginVertical: 2,
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 1,
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
+      shadowOpacity: 0.2,
+      shadowRadius: 1.41,
+      elevation: 2,
     },
     userBubble: {
       backgroundColor: '#6de67b',
       borderTopRightRadius: 4,
       marginLeft: 'auto',
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      marginRight: 4,
     },
     botBubble: {
-      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      backgroundColor: isDarkMode ? '#333333' : '#F5F5F5',
       borderTopLeftRadius: 4,
       marginRight: 'auto',
+      marginLeft: 4,
     },
     userText: {
       color: '#000000',
-      fontSize: 16,
-      lineHeight: 24,
+      fontSize: 15,
+      lineHeight: 20,
     },
     botText: {
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      fontSize: 16,
-      lineHeight: 24,
+      fontSize: 15,
+      lineHeight: 20,
     },
     timestamp: {
       fontSize: 12,
@@ -341,70 +507,44 @@ export default function ChatbotScreen({ navigation, route }) {
       opacity: 0.7,
     },
     userTimestamp: {
-      color: 'rgba(0,0,0,0.7)',
+      fontSize: 11,
+      color: 'rgba(0,0,0,0.6)',
       textAlign: 'right',
+      marginTop: 2,
     },
     botTimestamp: {
       color: isDarkMode ? '#999999' : '#666666',
       textAlign: 'left',
     },
-    inputContainer: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      zIndex: 3,
-      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
-      borderTopWidth: 1,
-      borderTopColor: isDarkMode ? '#333333' : '#E5E5E5',
-      paddingVertical: 8,
-      paddingBottom: isKeyboardVisible ? 8 : Platform.OS === 'ios' ? 34 : 16,
-    },
-    inputWrapper: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      gap: 8,
-    },
     input: {
       flex: 1,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      backgroundColor: isDarkMode ? '#333333' : '#F5F5F5',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 20,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      maxHeight: 100,
-      minHeight: 40,
+      marginRight: 8,
     },
     sendButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: '#6de67b',
       justifyContent: 'center',
       alignItems: 'center',
+      marginLeft: 8,
       shadowColor: '#000',
       shadowOffset: {
         width: 0,
         height: 2,
       },
-      shadowOpacity: 0.15,
+      shadowOpacity: 0.2,
       shadowRadius: 3,
-      elevation: 3,
-    },
-    sendButtonDisabled: {
-      backgroundColor: isDarkMode ? '#333333' : '#E5E5E5',
-      shadowOpacity: 0,
-      elevation: 0,
+      elevation: 4,
     },
     sendButtonIcon: {
-      marginLeft: -1,
-    },
-    sendButtonText: {
-      color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '600',
+      transform: [{ translateX: 1 }, { translateY: -1 }],
     },
     loadingContainer: {
       flex: 1,
@@ -420,6 +560,8 @@ export default function ChatbotScreen({ navigation, route }) {
     },
     messageContent: {
       flex: 1,
+      paddingBottom: 16,
+      paddingHorizontal: 8,
     },
     pinnedBubble: {
       borderLeftWidth: 3,
@@ -445,12 +587,9 @@ export default function ChatbotScreen({ navigation, route }) {
     },
     messageFooter: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-end',
       alignItems: 'center',
-      marginTop: 4,
-      paddingTop: 4,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+      marginTop: 2,
     },
     pinButton: {
       padding: 4,
@@ -463,26 +602,33 @@ export default function ChatbotScreen({ navigation, route }) {
       transform: [{ rotate: '45deg' }],
     },
     timerBubble: {
-      minWidth: 150,
+      minWidth: 120,
+      maxWidth: '60%',
     },
     timerContainer: {
-      marginTop: 8,
+      marginTop: 4,
+      flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      backgroundColor: isDarkMode ? '#444' : '#E5E5E5',
+      padding: 8,
+      borderRadius: 12,
     },
     timerText: {
-      fontSize: 24,
+      fontSize: 20,
       fontWeight: 'bold',
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      marginBottom: 4,
+      fontVariant: ['tabular-nums'], // ทำให้ตัวเลขมีความกว้างเท่ากัน
     },
     timerButtons: {
       flexDirection: 'row',
-      gap: 8,
+      gap: 4,
     },
     timerButton: {
-      padding: 8,
-      borderRadius: 20,
-      backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
+      padding: 4,
+      borderRadius: 16,
+      backgroundColor: isDarkMode ? '#555' : '#D5D5D5',
     },
     offlineText: {
       fontSize: 12,
@@ -505,39 +651,36 @@ export default function ChatbotScreen({ navigation, route }) {
       borderColor: '#6de67b',
     },
     selectionHeader: {
+      position: 'absolute',
+      top: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight + 16,
+      left: 0,
+      right: 0,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
       backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      borderBottomWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#E5E5E5',
+      zIndex: 999,
     },
     selectionCount: {
       color: isDarkMode ? '#FFFFFF' : '#000000',
       fontSize: 16,
       fontWeight: '500',
     },
-    chatContent: {
-      paddingBottom: 16,
-    },
-    chatContainer: {
-      flex: 1,
-      position: 'relative',
-    },
-    typingContainer: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: isKeyboardVisible ? 60 : Platform.OS === 'ios' ? 90 : 70,
-      backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
-      zIndex: 2,
+    selectionActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
     },
     tagContainer: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       marginTop: 8,
       gap: 6,
-      alignItems: 'center', // เพิ่มเพื่อจัดให้อยู่กึ่งกลางแนวตั้ง
+      alignItems: 'center',
     },
     tag: {
       backgroundColor: isDarkMode ? '#444' : '#F0F0F0',
@@ -548,7 +691,7 @@ export default function ChatbotScreen({ navigation, route }) {
       alignItems: 'center',
       borderWidth: 1,
       borderColor: isDarkMode ? '#555' : '#E0E0E0',
-      minHeight: 26, // กำหนดความสูงขั้นต่ำ
+      minHeight: 26,
     },
     tagText: {
       color: isDarkMode ? '#CCC' : '#666',
@@ -557,7 +700,7 @@ export default function ChatbotScreen({ navigation, route }) {
     },
     addTagButton: {
       backgroundColor: isDarkMode ? '#444' : '#F0F0F0',
-      width: 26, // เพิ่มขนาดให้เท่ากับความสูงของแท็ก
+      width: 26,
       height: 26,
       borderRadius: 13,
       justifyContent: 'center',
@@ -669,7 +812,12 @@ export default function ChatbotScreen({ navigation, route }) {
       marginBottom: 12,
       color: isDarkMode ? '#CCCCCC' : '#666666',
     },
-  }), [isDarkMode, isKeyboardVisible]);
+    messageOptions: {
+      padding: 8,
+      marginLeft: 4,
+      justifyContent: 'center',
+    },
+  }), [isDarkMode]);
 
   // โหลดข้อมูลแชทเมื่อเปิดหน้าจอ
   useEffect(() => {
@@ -730,25 +878,165 @@ export default function ChatbotScreen({ navigation, route }) {
         if (userDoc.exists()) {
           setUserPreferences(userDoc.data().preferences || {});
         }
-      } catch (error) {
+    } catch (error) {
         console.error('Error loading preferences:', error);
-      }
-    };
+    }
+  };
 
     loadUserPreferences();
   }, []);
 
+  // แก้ไขฟังก์ชัน getSimpleResponse
+  const getSimpleResponse = (message) => {
+    const lowerMessage = message.toLowerCase();
+
+    // ตรวจจับตัวเลขเพื่อสร้างตัวจับเวลา
+      const timeMatch = lowerMessage.match(/\d+/);
+      if (timeMatch) {
+        const minutes = parseInt(timeMatch[0]);
+        return `⏰ ตั้งเวลา ${minutes} นาที
+
+เวลาที่เหลือ: ${minutes}:00
+
+[เริ่มจับเวลา]  [หยุด]  [รีเซ็ต]
+
+หมายเหตุ: กดปุ่ม "เริ่มจับเวลา" เพื่อเริ่มนับถอยหลัง
+เมื่อครบเวลา บอทจะส่งข้อความแจ้งเตือน`;
+    }
+
+    // เมนูต้มไข่
+    if (lowerMessage.includes('ต้มไข่')) {
+      return `วิธีทำไข่ต้มมีดังนี้:
+
+1. เตรียมส่วนผสม:
+   - ไข่ไก่
+   - น้ำเปล่า
+   - เกลือ (ถ้าต้องการ)
+
+2. วิธีทำ:
+   - ต้มน้ำให้เดือด
+   - ใส่ไข่ลงไปต้ม
+   ⏰ ระยะเวลาต้ม:
+   - ไข่ไก่ลวก (ไข่แดงเหลว): 3 นาที
+   - ไข่ไก่ต้มไข่แดงยางมะตูม: 5 นาที
+   - ไข่ไก่ต้มสุก: 7 นาที
+
+เคล็ดลับ:
+- ใส่เกลือเล็กน้อยจะช่วยให้ปอกเปลือกง่าย
+- แช่ในน้ำเย็นทันทีเพื่อให้ปอกเปลือกง่าย
+
+⏱️ ต้องการจับเวลาไหมคะ? 
+พิมพ์ตัวเลขนาทีที่ต้องการ:
+"3" สำหรับไข่ลวก
+"5" สำหรับไข่ยางมะตูม
+"7" สำหรับไข่ต้มสุก`;
+    }
+
+    // เมนูอื่นๆ และคำตอบทั่วไป...
+    return `สวัสดีค่ะ ดิฉันสามารถแนะนำวิธีทำอาหารไทยยอดนิยมได้แก่:
+
+1. ต้มยำ
+2. แกงเขียวหวาน
+3. ผัดกะเพรา
+4. ผัดไทย
+5. ส้มตำ
+6. มะม่วงข้าวเหนียว
+7. ต้มไข่
+
+กรุณาพิมพ์ชื่ออาหารที่ต้องการทราบวิธีทำค่ะ`;
+  };
+
+  // เพิ่มฟังก์ชันจัดการตัวจับเวลา
+  const startTimer = async (messageId) => {
+    try {
+      const message = messages.find(msg => msg.id === messageId);
+      if (!message || !message.timer) return;
+
+      const messageRef = doc(db, 'chats', messageId);
+      await updateDoc(messageRef, {
+        'timer.isRunning': true,
+        'timer.startedAt': new Date().getTime()
+      });
+
+      // อัพเดท state ทันที
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId 
+          ? { 
+              ...msg, 
+              timer: { 
+                ...msg.timer, 
+                isRunning: true,
+                startedAt: new Date().getTime()
+              }
+            }
+          : msg
+      ));
+    } catch (error) {
+      console.error('Error starting timer:', error);
+    }
+  };
+
+  const stopTimer = async (messageId) => {
+    try {
+      const messageRef = doc(db, 'chats', messageId);
+      await updateDoc(messageRef, {
+        'timer.isRunning': false
+      });
+
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId 
+          ? { 
+              ...msg, 
+              timer: { 
+                ...msg.timer, 
+                isRunning: false 
+              }
+            }
+          : msg
+      ));
+    } catch (error) {
+      console.error('Error stopping timer:', error);
+    }
+  };
+
+  const resetTimer = async (messageId) => {
+    try {
+      const message = messages.find(msg => msg.id === messageId);
+      if (!message || !message.timer) return;
+
+      const messageRef = doc(db, 'chats', messageId);
+      await updateDoc(messageRef, {
+        'timer.isRunning': false,
+        'timer.remainingTime': message.timer.initialTime
+      });
+
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId 
+          ? { 
+              ...msg, 
+              timer: { 
+                ...msg.timer, 
+                isRunning: false,
+                remainingTime: msg.timer.initialTime
+              }
+            }
+          : msg
+      ));
+    } catch (error) {
+      console.error('Error resetting timer:', error);
+    }
+  };
+
+  // แก้ไขฟังก์ชัน handleSend เพื่อรองรับการสร้างตัวจับเวลา
   const handleSend = async () => {
     if (!input.trim() || isSending) return;
 
     try {
       setIsSending(true);
-      haptics.light();
-
       const currentUser = auth.currentUser;
       if (!currentUser || !chatId) return;
 
-      // ส่งข้อความผู้ใช้ทันที
+      // ส่งข้อความผู้ใช้
       const messagesRef = collection(db, 'chats');
       const userMessage = {
         text: input.trim(),
@@ -761,14 +1049,67 @@ export default function ChatbotScreen({ navigation, route }) {
 
       await addDoc(messagesRef, userMessage);
       setInput('');
-
-      // แสดงสถานะกำลังพิมพ์
+      await playSendSound();
       setIsTyping(true);
 
-      // ส่งคำตอบบอททันทีที่ได้รับ
-      const botResponse = useGPT ? 
-        await getChatGPTResponse(input) : 
-        getSimpleResponse(input);
+      // ตรวจสอบการตั้งเวลาก่อน ไม่ว่าจะอยู่ในโหมดไหน
+      const timeMatch = input.match(/\d+/);
+      if (timeMatch) {
+        const minutes = parseInt(timeMatch[0]);
+        const botMessage = {
+          text: `⏰ ตั้งเวลา ${minutes} นาที`,
+          sender: 'bot',
+          userId: currentUser.uid,
+          chatId: chatId,
+          type: 'message',
+          createdAt: new Date().getTime(),
+          timer: {
+            initialTime: minutes * 60,
+            remainingTime: minutes * 60,
+            isRunning: false
+          }
+        };
+        await addDoc(messagesRef, botMessage);
+        await playReceiveSound();
+        setIsTyping(false);
+        return;
+      }
+
+      // ถ้าไม่ใช่การตั้งเวลา ให้ตอบตามโหมดที่เลือก
+      let botResponse;
+      if (useGPT) {
+        try {
+          const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: "gpt-3.5-turbo",
+              messages: [
+                {
+                  role: "system",
+                  content: `คุณเป็นผู้เชี่ยวชาญด้านอาหารไทย คอยให้คำแนะนำเกี่ยวกับการทำอาหาร วัตถุดิบ และเคล็ดลับต่างๆ`
+                },
+                {
+                  role: "user",
+                  content: input.trim()
+                }
+              ]
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          botResponse = response.data.choices[0].message.content;
+        } catch (error) {
+          console.error('GPT API Error:', error);
+          botResponse = 'ขออภัย ไม่สามารถเชื่อมต่อกับ AI ได้ในขณะนี้';
+        }
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        botResponse = getSimpleResponse(input.trim());
+      }
 
       const botMessage = {
         text: botResponse,
@@ -780,6 +1121,7 @@ export default function ChatbotScreen({ navigation, route }) {
       };
 
       await addDoc(messagesRef, botMessage);
+      await playReceiveSound();
       haptics.success();
 
     } catch (error) {
@@ -847,207 +1189,6 @@ export default function ChatbotScreen({ navigation, route }) {
     }
   };
 
-  const getSimpleResponse = (message) => {
-    const lowerMessage = message.toLowerCase();
-
-    // การจับเวลา
-    if (lowerMessage.includes('จับเวลา') || lowerMessage.match(/^\d+$/)) {
-      const timeMatch = lowerMessage.match(/\d+/);
-      if (timeMatch) {
-        const minutes = parseInt(timeMatch[0]);
-        return `⏰ ตั้งเวลา ${minutes} นาที
-
-เวลาที่เหลือ: ${minutes}:00
-
-[เริ่มจับเวลา]  [หยุด]  [รีเซ็ต]
-
-หมายเหตุ: กดปุ่ม "เริ่มจับเวลา" เพื่อเริ่มนับถอยหลัง
-เมื่อครบเวลา บอทจะส่งข้อความแจ้งเตือน`;
-      }
-    }
-
-    // เมนูต้มไข่
-    if (lowerMessage.includes('ต้มไข่')) {
-      return `วิธีทำไข่ต้มมีดังนี้:
-
-1. เตรียมส่วนผสม:
-   - ไข่ไก่
-   - น้ำเปล่า
-   - เกลือ (ถ้าต้องการ)
-
-2. วิธีทำ:
-   - ต้มน้ำให้เดือด
-   - ใส่ไข่ลงไปต้ม
-   ⏰ ระยะเวลาต้ม:
-   - ไข่ไก่ลวก (ไข่แดงเหลว): 3 นาที
-   - ไข่ไก่ต้มไข่แดงยางมะตูม: 5 นาที
-   - ไข่ไก่ต้มสุก: 7 นาที
-
-เคล็ดลับ:
-- ใส่เกลือเล็กน้อยจะช่วยให้ปอกเปลือกง่าย
-- แช่ในน้ำเย็นทันทีเพื่อให้ปอกเปลือกง่าย
-
-⏱️ ต้องการจับเวลาไหมคะ? 
-พิมพ์ตัวเลขนาทีที่ต้องการ:
-"3" สำหรับไข่ลวก
-"5" สำหรับไข่ยางมะตูม
-"7" สำหรับไข่ต้มสุก`;
-    }
-
-    // เมนูต้มยำ
-    if (lowerMessage.includes('ต้มยำ')) {
-      return `วิธีทำต้มยำมีดังนี้:
-
-1. เตรียมส่วนผสม:
-   - น้ำซุปหรือน้ำเปล่า 2 ถ้วย
-   - ข่า ตะไคร้ ใบมะกรูด พริกขี้หนู
-   - เห็ด กุ้ง หรือไก่ตามชอบ
-   - น้ำพริกเผา น้ำปลา มะนาว
-   - ผักชี ต้นหอม
-
-2. วิธีทำ:
-   - ต้มน้ำให้เดือด ใส่ข่า ตะไคร้ ใบมะกรูด (⏰ 5 นาที)
-   - ใส่เห็ดหรือเนื้อสัตว์ที่เตรียมไว้ (⏰ 3-5 นาที)
-   - ปรุงรสด้วยน้ำพริกเผา น้ำปลา
-   - เมื่อสุกใส่มะนาว ผักชี ต้นหอม
-
-เคล็ดลับ: 
-- ใส่น้ำพริกเผาก่อนมะนาวเพื่อให้รสชาติกลมกล่อม
-- ไม่ต้มนานเกินไปเพื่อให้ผักยังกรอบอยู่
-
-⏱️ ต้องการจับเวลาไหมคะ?
-พิมพ์ "จับเวลา 5 นาที" สำหรับต้มเครื่องต้มยำ
-พิมพ์ "จับเวลา 3 นาที" สำหรับต้มกุ้ง/เห็ด`;
-    }
-
-    // เมนูแกงเขียวหวาน
-    if (lowerMessage.includes('แกงเขียวหวาน')) {
-      return `วิธีทำแกงเขียวหวานมีดังนี้:
-
-1. เตรียมเครื่องแกง:
-   - พริกเขียว หอมแดง ข่า ตะไคร้
-   - กระเทียม ผิวมะกรูด รากผักชี
-   - ลูกผักชี ยี่หร่า พริกไทย กะปิ
-
-2. วิธีทำ:
-   - โขลกเครื่องแกงให้ละเอียด
-   - ผัดเครื่องแกงกับหัวกะทิจนหอม
-   - ใส่เนื้อไก่หรือเนื้อสัตว์ที่เตรียมไว้
-   - เติมน้ำกะทิ ใส่มะเขือ พริกชี้ฟ้า
-   - ปรุงรสด้วยน้ำปลา น้ำตาล ใบโหระพา
-
-เคล็ดลับ:
-- แยกกะทิเป็นหัวกะทิและหางกะทิ
-- ผัดเครื่องแกงจนมีกลิ่นหอมก่อนใส่กะทิ
-- ใส่ใบโหระพาตอนใกล้ปิดไฟ
-
-ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
-    }
-
-    // เมนูผัดกะเพรา
-    if (lowerMessage.includes('ผัดกะเพรา')) {
-      return `วิธีทำผัดกะเพรามีดังนี้:
-
-1. เตรียมส่วนผสม:
-   - เนื้อหมูสับ/ไก่สับ/เนื้อสับ
-   - กระเทียม พริกขี้หนูสด
-   - ใบกะเพรา น้ำมัน
-   - ซอสปรุงรส น้ำปลา น้ำตาล
-
-2. วิธีทำ:
-   - โขลกกระเทียมและพริกให้แหลก
-   - ตั้งกระทะใส่น้ำมัน ผัดกระเทียมพริก
-   - ใส่เนื้อสับลงผัด
-   - ปรุงรสด้วยน้ำปลา น้ำตาล
-   - ใส่ใบกะเพราผัดให้เข้ากัน
-
-เคล็ดลับ:
-- ใช้ไฟแรงในการผัด
-- ใส่ใบกะเพราตอนท้าย
-- ไม่ต้องใส่น้ำ จะได้รสชาติที่เข้มข้น
-
-ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
-    }
-
-    // เมนูผัดไทย
-    if (lowerMessage.includes('ผัดไทย')) {
-      return `วิธีทำผัดไทยมีดังนี้:
-
-1. เตรียมส่วนผสม:
-   - เส้นจันท์แช่น้ำปรุงรสให้นุ่ม
-   - ไข่ กุ้งแห้ง เต้าหู้
-   - ถั่วงอก ใบกุยช่าย
-   - น้ำตาลปี๊บ น้ำปลา น้ำมะขาม
-   - ถั่วลิสงป่น พริกป่น
-
-2. วิธีทำ:
-   - ผัดเส้นกับน้ำปรุงรสให้นุ่ม
-   - ตอกไข่ลงผัดให้สุก
-   - ใส่ถั่วงอก ใบกุยช่าย
-   - โรยหน้าด้วยถั่วลิสงป่น
-
-เคล็ดลับ:
-- แช่เส้นให้นุ่มพอดี ไม่เละ
-- ผัดเส้นให้แห้ง ไม่เหนียวติดกัน
-- ปรุงรสให้ได้ความหวาน เค็ม เปรี้ยว สมดุล
-
-ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
-    }
-
-    // เมนูส้มตำ
-    if (lowerMessage.includes('ส้มตำ')) {
-      return `วิธีทำส้มตำมีดังนี้:
-
-1. เตรียมส่วนผสม:
-   - มะละกอเขียวขูด
-   - มะเขือเทศ กระเทียม พริกสด
-   - ถั่วฝักยาว กุ้งแห้ง
-   - น้ำปลา น้ำตาล มะนาว
-   - ถั่วลิสงคั่ว
-
-2. วิธีทำ:
-   - ตำกระเทียม พริกให้แหลก
-   - ใส่มะเขือเทศ ถั่วฝักยาว
-   - ใส่มะละกอ ปรุงรส คลุกเคล้า
-   - โรยหน้าด้วยถั่วลิสงคั่ว
-
-เคล็ดลับ:
-- เลือกมะละกอเขียวแก่ ขูดเป็นเส้นยาว
-- ปรุงรสให้เปรี้ยวนำ เค็มตาม หวานเล็กน้อย
-- ตำเบาๆ ไม่ให้มะละกอเละ
-
-ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
-    }
-
-    // เมนูมะม่วงข้าวเหนียว
-    if (lowerMessage.includes('มะม่วงข้าวเหนียว')) {
-      return `วิธีทำมะม่วงข้าวเหนียวมีดังนี้:
-
-1. เตรียมส่วนผสม:
-   - ข้าวเหนียว
-   - มะม่วงสุก
-   - กะทิ น้ำตาล เกลือ
-   - งาคั่ว
-
-2. วิธีทำ:
-   - แช่ข้าวเหนียว 4-6 ชั่วโมง
-   - นึ่งข้าวเหนียวให้สุก
-   - ทำกะทิ: ผสมกะทิ น้ำตาล เกลือ
-   - ราดกะทิลงบนข้าวเหนียว
-   - เสิร์ฟพร้อมมะม่วงสุก
-
-เคล็ดลับ:
-- เลือกมะม่วงสุกหวานหอม
-- นึ่งข้าวเหนียวให้สุกนุ่มพอดี
-- ราดกะทิตอนข้าวยังอุ่นๆ
-
-ต้องการทราบอะไรเพิ่มเติมไหมคะ?`;
-    }
-
-    // ถ้าไม่ตรงกับเงื่อนไขใดๆ
-    return 'สวัสดีค่ะ ดิฉันสามารถแนะนำวิธีทำอาหารไทยยอดนิยมได้แก่:\n1. ต้มยำ\n2. แกงเขียวหวาน\n3. ผัดกะเพรา\n4. ผัดไทย\n5. ส้มตำ\n6. มะม่วงข้าวเหนียว\n7. ต้มไข่\n\nกรุณาพิมพ์ชื่ออาหารที่ต้องการทราบวิธีทำค่ะ';
-  };
-
   const handleTimerMessage = async (minutes) => {
     const totalSeconds = minutes * 60;
     const messageId = Date.now().toString();
@@ -1082,97 +1223,9 @@ export default function ChatbotScreen({ navigation, route }) {
   };
 
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const startTimer = (messageId) => {
-    if (timers[messageId]) return; // ถ้ามีตัวจับเวลาอยู่แล้วให้ return
-
-    const timer = setInterval(() => {
-      setMessages(prevMessages => {
-        const updatedMessages = prevMessages.map(msg => {
-          if (msg.id === messageId && msg.timer) {
-            const remainingTime = msg.timer.remainingTime - 1;
-            if (remainingTime <= 0) {
-              stopTimer(messageId);
-              return {
-                ...msg,
-                timer: { ...msg.timer, remainingTime: 0, isRunning: false }
-              };
-            }
-            return {
-              ...msg,
-              timer: { ...msg.timer, remainingTime, isRunning: true }
-            };
-          }
-          return msg;
-        });
-        return updatedMessages;
-      });
-    }, 1000);
-
-    setTimers(prev => ({ ...prev, [messageId]: timer }));
-  };
-
-  const stopTimer = (messageId) => {
-    if (timers[messageId]) {
-      clearInterval(timers[messageId]);
-      setTimers(prev => {
-        const newTimers = { ...prev };
-        delete newTimers[messageId];
-        return newTimers;
-      });
-
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === messageId && msg.timer
-            ? { ...msg, timer: { ...msg.timer, isRunning: false } }
-            : msg
-        )
-      );
-
-      // เพิ่มการเล่นเสียงเมื่อเวลาหมด
-      handleTimerComplete();
-
-      Alert.alert(
-        'หมดเวลา!',
-        'ตัวจับเวลาได้สิ้นสุดลงแล้ว',
-        [{ text: 'ตกลง' }]
-      );
-    }
-  };
-
-  const resetTimer = (messageId) => {
-    const message = messages.find(msg => msg.id === messageId);
-    if (message?.timer) {
-      stopTimer(messageId);
-      setMessages(prevMessages =>
-        prevMessages.map(msg =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                timer: {
-                  ...msg.timer,
-                  remainingTime: msg.timer.initialTime,
-                  isRunning: false
-                }
-              }
-            : msg
-        )
-      );
-    }
-  };
-
-  const addMessage = (sender, text, timestamp) => {
-    setMessages((prevMessages) => [
-      { id: Date.now().toString(), sender, text, timestamp },
-      ...prevMessages,
-    ]);
-    setTimeout(() => {
-      flatListRef.current.scrollToOffset({ animated: true, offset: 0 }); // Smooth Scroll
-    }, 100);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   const startAnimation = () => {
@@ -1236,16 +1289,15 @@ export default function ChatbotScreen({ navigation, route }) {
   };
 
   const handleSelectMessage = (messageId) => {
-    if (selectedMessages.includes(messageId)) {
-      setSelectedMessages(prev => prev.filter(id => id !== messageId));
-      if (selectedMessages.length === 1) {
-        setIsSelectionMode(false);
-      }
-    } else {
-      setSelectedMessages(prev => [...prev, messageId]);
-      setIsSelectionMode(true);
+    if (isSelectionMode) {
+      setSelectedMessages(prev => {
+        if (prev.includes(messageId)) {
+          return prev.filter(id => id !== messageId);
+        } else {
+          return [...prev, messageId];
+        }
+      });
     }
-    haptics.light();
   };
 
   const handleDeleteSelected = async () => {
@@ -1285,10 +1337,14 @@ export default function ChatbotScreen({ navigation, route }) {
     }
   };
 
-  const handleLongPress = (message) => {  // รับ message object แทน text
+  const handleLongPress = (message) => {
     if (!isSelectionMode) {
+      if (!message?.id) {
+        console.error('No message ID in handleLongPress:', message);
+        return;
+      }
+      setSelectedMessageId(message.id);
       setSelectedMessageText(message.text);
-      setSelectedMessageId(message.id);  // เพิ่มการเก็บ ID
       setMenuVisible(true);
     }
   };
@@ -1322,16 +1378,41 @@ export default function ChatbotScreen({ navigation, route }) {
 
   const renderMessage = ({ item }) => {
     const isUser = item.sender === 'user';
+    
+    if (isUser) {
+      return (
+        <TouchableOpacity
+          style={[styles.messageRow, styles.userRow]}
+          onPress={handlePress}
+          onLongPress={() => handleLongPress(item)}
+          delayLongPress={500}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.messageBubble, styles.userBubble]}>
+            <Text style={styles.userText}>{item.text}</Text>
+            <View style={styles.messageFooter}>
+              <Text style={styles.userTimestamp}>
+                {new Date(item.createdAt).toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+                })}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
     const isSelected = selectedMessages.includes(item.id);
     
-    // แก้ไขการแสดงเวลา
     const messageTime = item.createdAt 
       ? new Date(item.createdAt).toLocaleTimeString('th-TH', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false
-        })
-      : '';
+    })
+    : '';
 
     const handlePress = () => {
       if (isSelectionMode) {
@@ -1341,9 +1422,9 @@ export default function ChatbotScreen({ navigation, route }) {
 
     return (
       <TouchableOpacity
-        style={[styles.messageRow, isUser ? styles.userRow : styles.botRow]}
+        style={[styles.messageRow, styles.botRow]}
         onPress={handlePress}
-        onLongPress={() => handleLongPress(item)}  // ส่ง message object ทั้งก้อน
+        onLongPress={() => handleLongPress(item)}
         delayLongPress={500}
         activeOpacity={0.7}
       >
@@ -1362,34 +1443,40 @@ export default function ChatbotScreen({ navigation, route }) {
           styles.messageBubble,
           isUser ? styles.userBubble : styles.botBubble,
           item.timer && styles.timerBubble,
-            item.isPinned && styles.pinnedBubble,
             isSelected && styles.selectedBubble,
           ]}
         >
           <View style={styles.messageContent}>
-          {item.isPinned && (
-            <View style={styles.pinnedIndicator}>
-              <MaterialIcons 
-                name="push-pin" 
-                size={14} 
-                color="#FFD700" 
-                style={styles.pinnedIcon}
-              />
-              <Text style={styles.pinnedText}>ปักหมุด</Text>
-            </View>
-          )}
           <Text style={isUser ? styles.userText : styles.botText}>
             {item.text}
           </Text>
           {item.timer && (
-            <View style={styles.timerContainer}>
+            <Animated.View 
+              style={[
+                styles.timerContainer,
+                {
+                  transform: [
+                    { scale: timerScale },
+                    {
+                      rotate: timerRotate.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '360deg']
+                      })
+                    }
+                  ]
+                }
+              ]}
+            >
               <Text style={styles.timerText}>
                 {formatTime(item.timer.remainingTime)}
               </Text>
               <View style={styles.timerButtons}>
                 <TouchableOpacity
                   style={styles.timerButton}
-                  onPress={() => item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id)}
+                  onPress={() => {
+                    pulseTimer();
+                    item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id);
+                  }}
                 >
                   <MaterialIcons
                     name={item.timer.isRunning ? 'pause' : 'play-arrow'}
@@ -1399,7 +1486,10 @@ export default function ChatbotScreen({ navigation, route }) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.timerButton}
-                  onPress={() => resetTimer(item.id)}
+                  onPress={() => {
+                    rotateTimer();
+                    resetTimer(item.id);
+                  }}
                 >
                   <MaterialIcons
                     name="refresh"
@@ -1408,7 +1498,7 @@ export default function ChatbotScreen({ navigation, route }) {
                   />
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           )}
             {renderTags(item)}
           </View>
@@ -1419,6 +1509,7 @@ export default function ChatbotScreen({ navigation, route }) {
             ]}>
               {messageTime}
             </Text>
+            {!item.timer && (
             <TouchableOpacity
               style={styles.pinButton}
               onPress={() => item.isPinned ? handleUnpinMessage(item.id) : handlePinMessage(item.id)}
@@ -1430,6 +1521,7 @@ export default function ChatbotScreen({ navigation, route }) {
                 style={item.isPinned ? { transform: [{ rotate: '-45deg' }] } : null}
               />
             </TouchableOpacity>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -1583,17 +1675,36 @@ export default function ChatbotScreen({ navigation, route }) {
       setMessages(prevMessages => {
         let hasChanges = false;
         const updatedMessages = prevMessages.map(msg => {
-          if (msg.isTimer && msg.timerStatus === 'running') {
-            const elapsedMinutes = Math.floor((Date.now() - new Date(msg.timerStartedAt).getTime()) / 60000);
-            const remainingMinutes = msg.timerMinutes - elapsedMinutes;
-            
-            if (remainingMinutes <= 0) {
+          if (msg.timer && msg.timer.isRunning) {
+            const now = new Date().getTime();
+            const startedAt = msg.timer.startedAt;
+            const elapsedSeconds = Math.floor((now - startedAt) / 1000);
+            const remainingTime = msg.timer.initialTime - elapsedSeconds;
+
+            if (remainingTime <= 0) {
+              // หยุดตัวจับเวลาเมื่อครบกำหนด
+              stopTimer(msg.id);
+              playTimerSound();
+              Alert.alert('หมดเวลา!', 'ตัวจับเวลาได้สิ้นสุดลงแล้ว');
               hasChanges = true;
-              return { ...msg, timerStatus: 'finished', remainingTime: 0 };
+              return {
+                ...msg,
+                timer: {
+                  ...msg.timer,
+                  remainingTime: 0,
+                  isRunning: false
+                }
+              };
             }
             
             hasChanges = true;
-            return { ...msg, remainingTime: remainingMinutes };
+            return {
+              ...msg,
+              timer: {
+                ...msg.timer,
+                remainingTime
+              }
+            };
           }
           return msg;
         });
@@ -1671,373 +1782,248 @@ export default function ChatbotScreen({ navigation, route }) {
     }
   };
 
-  // เพิ่มแท็กให้ข้อความ
-  const addTag = async (messageId, tag) => {
-    try {
-      // ตรวจสอบว่ามี messageId หรือไม่
-      if (!messageId) {
-        console.error('No message ID provided');
-        Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเพิ่มแท็กได้ (ไม่พบ ID ข้อความ)');
-        return;
-      }
-
-      const messagesRef = collection(db, 'chats');
-      const messageRef = doc(messagesRef, messageId);
-      
-      await updateDoc(messageRef, {
-        tags: arrayUnion(tag)
-      });
-      
-      haptics.light();
-      setShowTagInput(false);
-      setNewTag('');
-    } catch (error) {
-      console.error('Error adding tag:', error);
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเพิ่มแท็กได้');
-    }
+  // เพิ่มฟังก์ชันสำหรับการสร้างอนิเมชั่นตัวจับเวลา
+  const pulseTimer = () => {
+    Animated.sequence([
+      Animated.timing(timerScale, {
+        toValue: 1.1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(timerScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      })
+    ]).start();
   };
 
-  // ค้นหาข้อความตามแท็ก
-  const searchByTags = async (tags) => {
-    try {
-      const messagesRef = collection(db, 'chats');
-      const q = query(
-        messagesRef,
-        where('tags', 'array-contains-any', tags)
-      );
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-    } catch (error) {
-      console.error('Error searching by tags:', error);
-      return [];
-    }
+  const rotateTimer = () => {
+    timerRotate.setValue(0);
+    Animated.timing(timerRotate, {
+      toValue: 1,
+      duration: 500,
+      easing: Easing.elastic(1),
+      useNativeDriver: true,
+    }).start();
   };
-
-  // เพิ่มฟังก์ชันดึงแท็กทั้งหมด
-  const fetchAllTags = async () => {
-    try {
-      const messagesRef = collection(db, 'chats');
-      const q = query(messagesRef, where('userId', '==', auth.currentUser.uid));
-      const snapshot = await getDocs(q);
-      
-      // รวบรวมแท็กทั้งหมดจากข้อความ
-      const tags = new Set();
-      snapshot.docs.forEach(doc => {
-        const messageTags = doc.data().tags || [];
-        messageTags.forEach(tag => tags.add(tag));
-      });
-      
-      setAllTags(Array.from(tags));
-    } catch (error) {
-      console.error('Error fetching tags:', error);
-    }
-  };
-
-  // เพิ่ม useEffect
-  useEffect(() => {
-    if (showSearchResults) {
-      fetchAllTags();
-    }
-  }, [showSearchResults]);
 
   return (
     <KeyboardAvoidingView 
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
+      keyboardVerticalOffset={0}
     >
-      <View style={styles.container}>
-        <CustomPopup
-          visible={popupVisible}
-          message={popupMessage}
-          onClose={() => setPopupVisible(false)}
-        />
-        <MessageOptionsMenu
-          visible={menuVisible}
-          onClose={() => setMenuVisible(false)}
-          onCopy={() => handleCopyText(selectedMessageText)}
-          onSelect={() => {
-            setIsSelectionMode(true);
-            handleSelectMessage(selectedMessageText);
-          }}
-          onAddTag={() => {
-            if (selectedMessageId) {  // เพิ่มการตรวจสอบ
-              setShowTagInput(true);
-              setSelectedMessageId(selectedMessageId);
-            } else {
-              Alert.alert('ข้อผิดพลาด', 'กรุณาเลือกข้อความก่อนเพิ่มแท็ก');
-            }
-          }}
-        />
+      <CustomPopup
+        visible={popupVisible}
+        message={popupMessage}
+        onClose={() => setPopupVisible(false)}
+      />
 
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <MaterialIcons 
-                name="arrow-back" 
-                size={24} 
-                color={isDarkMode ? '#FFFFFF' : '#000000'} 
-              />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>{route.params?.title || 'Chat'}</Text>
-            </View>
-
-          <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={clearMessages}
-            >
-              <MaterialIcons name="delete-outline" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => setUseGPT(!useGPT)}
-            >
-              <MaterialIcons 
-                name={useGPT ? 'psychology' : 'psychology-alt'} 
-                size={24} 
-                color={isDarkMode ? '#FFFFFF' : '#000000'} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={toggleTheme}
-            >
-              <MaterialIcons 
-                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
-                size={24} 
-                color={isDarkMode ? '#FFFFFF' : '#000000'} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => {
-                setSearchResults([]); // เคลียร์ผลการค้นหาเก่า
-                setShowSearchResults(true); // เปิด Modal (จะทริกเกอร์ useEffect ให้โหลดแท็ก)
-              }}
-            >
-              <MaterialIcons name="search" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        {isLoading ? (
-          <LoadingSkeleton />
-        ) : error ? (
-          <ErrorState error={error} onRetry={loadMoreMessages} />
-        ) : (
-          <View style={styles.chatContainer}>
-          <Animated.FlatList
-            onScroll={Animated.event(
-                [{ 
-                  nativeEvent: { 
-                    contentOffset: { y: scrollY } 
-                  }
-                }],
-              { useNativeDriver: true }
-            )}
-              data={[
-                ...(isTyping ? [{ id: 'typing', isTyping: true }] : []),
-                ...messages
-              ]}
-              renderItem={({ item }) => {
-                if (item.isTyping) {
-                  return <BotTyping />;
-                }
-                return renderMessage({ item });
-              }}
-            keyExtractor={(item) => item.id}
-            ref={flatListRef}
-            inverted={true}
-              contentContainerStyle={[
-                styles.chatContent,
-                { paddingBottom: isKeyboardVisible ? 60 : Platform.OS === 'ios' ? 90 : 70 }
-              ]}
-            style={styles.messageList}
-            onEndReached={loadMoreMessages}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
-            refreshControl={
-              <RefreshControl
-                refreshing={isLoadingMore}
-                onRefresh={loadMoreMessages}
-                tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
-              />
-            }
-          />
-          </View>
-        )}
-
-        <View style={styles.inputContainer}>
-          <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            value={input}
-              onChangeText={handleInputChange}
-            placeholder="พิมพ์ข้อความ..."
-            placeholderTextColor="#999999"
-            multiline={false}
-            maxHeight={50}
-              onKeyPress={handleKeyPress}
-          />
-            
+      <MessageOptionsMenu
+        visible={menuVisible}
+        onClose={() => {
+          setMenuVisible(false);
+          setSelectedMessageId('');
+          setSelectedMessageText('');
+        }}
+        onCopy={() => handleCopyText(selectedMessageText)}
+        onSelect={() => {
+          setIsSelectionMode(true);
+          setMenuVisible(false);
+          handleSelectMessage(selectedMessageId);
+        }}
+      />
+      
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
           <TouchableOpacity 
-              style={[
-                styles.sendButton,
-                !input.trim() && styles.sendButtonDisabled
-              ]}
-            onPress={handleSend}
-            disabled={!input.trim()}
-              activeOpacity={0.7}
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+          <MaterialIcons 
+            name="arrow-back" 
+            size={24} 
+            color={isDarkMode ? '#FFFFFF' : '#000000'} 
+          />
+          </TouchableOpacity>
+        <Text style={styles.headerTitle}>{route.params?.title || 'Chat'}</Text>
+        </View>
+
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={clearMessages}
+          >
+            <MaterialIcons name="delete-outline" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
+          </TouchableOpacity>
+        
+          <TouchableOpacity 
+          style={[
+            styles.headerButton,
+            useGPT && { backgroundColor: '#6de67b' }  // เพิ่มสีเมื่อเปิดใช้ GPT Mode
+          ]}
+          onPress={toggleGPTMode}
+          >
+            <MaterialIcons 
+              name={useGPT ? 'psychology' : 'psychology-alt'} 
+              size={24} 
+            color={useGPT ? '#000000' : (isDarkMode ? '#FFFFFF' : '#000000')} 
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={toggleTheme}
+          >
+            <MaterialIcons 
+              name={isDarkMode ? 'light-mode' : 'dark-mode'} 
+              size={24} 
+              color={isDarkMode ? '#FFFFFF' : '#000000'} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      <View style={styles.content}>
+        <Animated.FlatList
+          onScroll={Animated.event(
+          [{ 
+            nativeEvent: { 
+              contentOffset: { y: scrollY } 
+            }
+          }],
+            { useNativeDriver: true }
+          )}
+        data={[
+          ...(isTyping ? [{ id: 'typing', isTyping: true }] : []),
+          ...messages
+        ]}
+        renderItem={({ item }) => {
+          if (item.isTyping) {
+            return <BotTyping />;
+          }
+          return renderMessage({ item });
+        }}
+          keyExtractor={(item) => item.id}
+          ref={flatListRef}
+          inverted={true}
+        contentContainerStyle={[
+          styles.chatContent,
+          { paddingBottom: Platform.OS === 'ios' ? 90 : 80 }
+        ]}
+          style={styles.messageList}
+          onEndReached={loadMoreMessages}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoadingMore}
+              onRefresh={loadMoreMessages}
+              tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
+            />
+          }
+        />
+      </View>
+
+      <View style={[
+        styles.inputContainer,
+        { backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF' }
+      ]}>
+        <View style={styles.inputWrapper}>
+        <TextInput
+          style={styles.input}
+          value={input}
+            onChangeText={handleInputChange}
+          placeholder="พิมพ์ข้อความ..."
+          placeholderTextColor="#999999"
+          multiline={false}
+          maxHeight={50}
+          />
+          
+          {input.trim() && (
+            <Animated.View
+              entering={SlideInRight.springify()
+                .damping(25)
+                .stiffness(120)
+                .mass(0.6)
+                .withInitialValues({
+                  transform: [
+                    { scale: 0.5 }, 
+                    { translateX: 50 }
+                  ],
+                })}
+                exiting={FadeOut.duration(150)
+                  .withInitialValues({
+                    transform: [
+                      { scale: 1 },
+                      { translateX: 0 }
+                    ],
+                    opacity: 1
+                  })}
+            >
+          <TouchableOpacity 
+                  style={[
+                    styles.sendButton,
+                    { 
+                      transform: [
+                        { scale: 1 },
+                        { rotate: '-10deg' }
+                      ] 
+                    }
+                  ]}
+                  onPress={() => {
+                    handleSend();
+                    setInput('');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons
+                    name="send"
+                    size={20}
+                    color="#FFFFFF"
+                    style={styles.sendButtonIcon}
+                  />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+        </View>
+      </View>
+
+    {isSelectionMode && (
+      <View style={styles.selectionHeader}>
+        <Text style={styles.selectionCount}>
+          เลือกแล้ว {selectedMessages.length} ข้อความ
+        </Text>
+        <View style={styles.selectionActions}>
+          {selectedMessages.length > 0 && (
+            <TouchableOpacity 
+              onPress={handleDeleteSelected}
+              style={styles.headerButton}
             >
               <MaterialIcons
-                name="arrow-upward"
+                name="delete"
                 size={24}
-                color={input.trim() ? '#FFFFFF' : isDarkMode ? '#666666' : '#999999'}
-                style={styles.sendButtonIcon}
+                color={isDarkMode ? '#FF453A' : '#FF3B30'}
               />
-          </TouchableOpacity>
-      </View>
-      </View>
-
-        <Modal
-          visible={showTagInput}
-          transparent={true}
-          onRequestClose={() => setShowTagInput(false)}
-        >
-          <TouchableOpacity 
-            style={styles.overlay}
-            onPress={() => setShowTagInput(false)}
-            activeOpacity={1}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => {
+              setIsSelectionMode(false);
+              setSelectedMessages([]);
+            }}
+            style={styles.headerButton}
           >
-            <View style={[
-              styles.tagInputContainer,
-              { backgroundColor: isDarkMode ? '#333' : '#FFFFFF' }
-            ]}>
-              <Text style={[
-                styles.tagInputTitle,
-                { color: isDarkMode ? '#FFFFFF' : '#000000' }
-              ]}>
-                เพิ่มแท็ก
-              </Text>
-              <TextInput
-                style={[
-                  styles.tagInput,
-                  { 
-                    color: isDarkMode ? '#FFFFFF' : '#000000',
-                    backgroundColor: isDarkMode ? '#444' : '#F5F5F5'
-                  }
-                ]}
-                value={newTag}
-                onChangeText={setNewTag}
-                placeholder="พิมพ์แท็ก..."
-                placeholderTextColor="#999"
-                autoFocus
-              />
-              <View style={styles.tagInputButtons}>
-                <TouchableOpacity 
-                  style={[styles.tagButton, styles.cancelButton]}
-                  onPress={() => {
-                    setShowTagInput(false);
-                    setNewTag('');
-                  }}
-                >
-                  <Text style={styles.buttonText}>ยกเลิก</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.tagButton, styles.addButton]}
-                  onPress={() => {
-                    if (newTag.trim()) {
-                      addTag(selectedMessageId, newTag.trim());
-                    }
-                  }}
-                >
-                  <Text style={styles.buttonText}>เพิ่ม</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <MaterialIcons
+              name="close"
+              size={24}
+              color={isDarkMode ? '#FFFFFF' : '#000000'}
+            />
           </TouchableOpacity>
-        </Modal>
-
-        <Modal
-          visible={showSearchResults}
-          transparent={true}
-          onRequestClose={() => setShowSearchResults(false)}
-          animationType="fade"
-        >
-          <View style={styles.overlay}>
-            <View style={[
-              styles.searchResultsContainer,
-              { backgroundColor: isDarkMode ? '#222' : '#FFFFFF' }
-            ]}>
-              <View style={styles.searchHeader}>
-                <Text style={[
-                  styles.searchTitle,
-                  { color: isDarkMode ? '#FFFFFF' : '#000000' }
-                ]}>
-                  ค้นหาตามแท็ก
-                </Text>
-                <TouchableOpacity onPress={() => setShowSearchResults(false)}>
-                  <MaterialIcons name="close" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsList}>
-                {allTags.map((tag, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.tagChip,
-                      searchResults.some(msg => msg.tags?.includes(tag)) && styles.tagChipActive
-                    ]}
-                    onPress={async () => {
-                      try {
-                        const results = await searchByTags([tag]);
-                        const filteredResults = results.filter(msg => msg.chatId === chatId);
-                        setSearchResults(filteredResults.reverse()); // เรียงลำดับใหม่
-                      } catch (error) {
-                        console.error('Error searching tags:', error);
-                      }
-                    }}
-                  >
-                    <Text style={[
-                      styles.tagChipText,
-                      searchResults.some(msg => msg.tags?.includes(tag)) && styles.tagChipTextActive
-                    ]}>
-                      #{tag}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {searchResults.length > 0 ? (
-                <>
-                  <Text style={styles.searchResultsTitle}>
-                    ผลการค้นหา ({searchResults.length})
-                  </Text>
-                  <FlatList
-                    data={searchResults}
-                    renderItem={renderMessage}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={{ paddingBottom: 20 }}
-                    inverted={false} // ไม่กลับด้าน
-                    style={{ maxHeight: '70%' }} // จำกัดความสูง
-                  />
-                </>
-              ) : (
-                <Text style={styles.emptyText}>
-                  เลือกแท็กเพื่อดูข้อความ
-                </Text>
-              )}
-            </View>
-          </View>
-        </Modal>
+        </View>
       </View>
-    </KeyboardAvoidingView>
-  );
+    )}
+  </KeyboardAvoidingView>
+);
 }
