@@ -34,7 +34,7 @@
     "expo-image-manipulator": "^13.0.5",
     "expo-image-picker": "~16.0.3",
     "expo-network": "^7.0.4",
-    "expo-notifications": "^0.29.11",
+    "expo-notifications": "~0.29.13",
     "expo-status-bar": "~2.0.0",
     "firebase": "^11.1.0",
     "lottie-react-native": "^7.2.2",

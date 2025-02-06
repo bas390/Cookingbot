@@ -38,6 +38,22 @@ import { Keyboard } from 'react-native';
 import { extractIngredients, findRecipesByIngredients, rankRecipesByIngredients } from '../utils/recipeUtils';
 import { findFAQAnswer } from '../utils/faqUtils';
 import { SlideInRight, SlideInLeft, FadeIn, FadeOut, withSpring, runOnJS } from 'react-native-reanimated';
+import * as Notifications from 'expo-notifications';
+
+// ตั้งค่า notifications ที่ส่วนบนของไฟล์
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+// เพิ่มฟังก์ชันขอสิทธิ์การแจ้งเตือน
+const requestNotificationPermission = async () => {
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
+};
 
 // BotTyping Component
 const BotTyping = () => {
@@ -304,6 +320,12 @@ export default function ChatbotScreen({ navigation, route }) {
   const [timerScale] = useState(new Animated.Value(1));
   const [timerRotate] = useState(new Animated.Value(0));
 
+  // เพิ่ม state สำหรับเก็บ active timer
+  const [activeTimerId, setActiveTimerId] = useState(null);
+
+  // เพิ่ม state สำหรับเก็บ animation values แยกตาม timer
+  const [timerAnimations, setTimerAnimations] = useState({});
+
   // เพิ่ม useEffect สำหรับโหลดค่า GPT Mode
   useEffect(() => {
     const loadGPTMode = async () => {
@@ -364,10 +386,10 @@ export default function ChatbotScreen({ navigation, route }) {
     inputWrapper: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 16,
+      paddingHorizontal: 12,
       paddingVertical: 8,
       height: Platform.OS === 'ios' ? 70 : 64,
-      gap: 8,
+      gap: 2,
     },
     inputAnimatedContainer: {
       flexDirection: 'row',
@@ -379,6 +401,7 @@ export default function ChatbotScreen({ navigation, route }) {
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
       paddingHorizontal: 16,
+      paddingRight: 8,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 20,
       flex: 1,
@@ -528,29 +551,23 @@ export default function ChatbotScreen({ navigation, route }) {
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
       paddingHorizontal: 16,
+      paddingRight: 8,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 20,
       flex: 1,
     },
     sendButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: '#6de67b',
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: {
-        width: 0,
-        height: 2,
-      },
-      shadowOpacity: 0.15,
-      shadowRadius: 3,
-      elevation: 3,
-      transform: [{ scale: 1.0 }],
+      marginRight: -4,
     },
     sendButtonIcon: {
       marginLeft: 2,
+      transform: [{ translateX: 1 }],
+      opacity: 0.9,
     },
     loadingContainer: {
       flex: 1,
@@ -621,11 +638,21 @@ export default function ChatbotScreen({ navigation, route }) {
       padding: 8,
       borderRadius: 12,
     },
+    timerDisabled: {
+      opacity: 0.5,
+      backgroundColor: isDarkMode ? '#333' : '#DDDDDD',
+    },
     timerText: {
       fontSize: 20,
       fontWeight: 'bold',
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      fontVariant: ['tabular-nums'], // ทำให้ตัวเลขมีความกว้างเท่ากัน
+      fontVariant: ['tabular-nums'],
+    },
+    timerTextDisabled: {
+      color: isDarkMode ? '#999999' : '#666666',
+    },
+    timerWarning: {
+      color: '#FF3B30',
     },
     timerButtons: {
       flexDirection: 'row',
@@ -635,6 +662,9 @@ export default function ChatbotScreen({ navigation, route }) {
       padding: 4,
       borderRadius: 16,
       backgroundColor: isDarkMode ? '#555' : '#D5D5D5',
+    },
+    timerButtonDisabled: {
+      backgroundColor: isDarkMode ? '#444' : '#CCCCCC',
     },
     offlineText: {
       fontSize: 12,
@@ -955,28 +985,33 @@ export default function ChatbotScreen({ navigation, route }) {
   // เพิ่มฟังก์ชันจัดการตัวจับเวลา
   const startTimer = async (messageId) => {
     try {
-      const message = messages.find(msg => msg.id === messageId);
-      if (!message || !message.timer) return;
-
-      const messageRef = doc(db, 'chats', messageId);
-      await updateDoc(messageRef, {
-        'timer.isRunning': true,
-        'timer.startedAt': new Date().getTime()
+      // ปิดตัวจับเวลาเก่าก่อนเริ่มตัวใหม่
+      if (activeTimerId && activeTimerId !== messageId) {
+        await stopTimer(activeTimerId);
+      }
+      
+      // อัพเดท active timer ใน Firestore
+      const chatRef = doc(db, 'chats', chatId);
+      await updateDoc(chatRef, {
+        activeTimerId: messageId
       });
-
-      // อัพเดท state ทันที
-      setMessages(prev => prev.map(msg => 
-        msg.id === messageId 
-          ? { 
-              ...msg, 
-              timer: { 
-                ...msg.timer, 
+      
+      setActiveTimerId(messageId);
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg.id === messageId) {
+            return {
+              ...msg,
+              timer: {
+                ...msg.timer,
                 isRunning: true,
                 startedAt: new Date().getTime()
               }
-            }
-          : msg
-      ));
+            };
+          }
+          return msg;
+        })
+      );
     } catch (error) {
       console.error('Error starting timer:', error);
     }
@@ -1035,9 +1070,22 @@ export default function ChatbotScreen({ navigation, route }) {
 
   // แก้ไขฟังก์ชัน handleSend เพื่อรองรับการสร้างตัวจับเวลา
   const handleSend = async () => {
-    if (!input.trim() || isSending) return;
-
     try {
+      // ปิดตัวจับเวลาที่กำลังทำงานอยู่เมื่อส่งข้อความใหม่
+      if (activeTimerId) {
+        await stopTimer(activeTimerId);
+        
+        // รีเซ็ต active timer ใน Firestore
+        const chatRef = doc(db, 'chats', chatId);
+        await updateDoc(chatRef, {
+          activeTimerId: null
+        });
+        
+        setActiveTimerId(null);
+      }
+      
+      if (!input.trim() || isSending) return;
+
       setIsSending(true);
       const currentUser = auth.currentUser;
       if (!currentUser || !chatId) return;
@@ -1460,29 +1508,40 @@ export default function ChatbotScreen({ navigation, route }) {
             <Animated.View 
               style={[
                 styles.timerContainer,
+                activeTimerId && activeTimerId !== item.id && styles.timerDisabled,
                 {
-                  transform: [
-                    { scale: timerScale },
+                  transform: timerAnimations[item.id] ? [
+                    { scale: timerAnimations[item.id].scale },
                     {
-                      rotate: timerRotate.interpolate({
+                      rotate: timerAnimations[item.id].rotate.interpolate({
                         inputRange: [0, 1],
                         outputRange: ['0deg', '360deg']
                       })
                     }
-                  ]
+                  ] : []
                 }
               ]}
             >
-              <Text style={styles.timerText}>
+              <Text style={[
+                styles.timerText,
+                item.timer?.isWarning && styles.timerWarning,
+                activeTimerId && activeTimerId !== item.id && styles.timerTextDisabled
+              ]}>
                 {formatTime(item.timer.remainingTime)}
               </Text>
               <View style={styles.timerButtons}>
+                {(!activeTimerId || activeTimerId === item.id) && (
+                  <>
                 <TouchableOpacity
-                  style={styles.timerButton}
-                  onPress={() => {
-                    pulseTimer();
-                    item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id);
-                  }}
+                      style={[
+                        styles.timerButton,
+                        !item.timer.isRunning && styles.timerButtonDisabled
+                      ]}
+                      onPress={() => {
+                        pulseTimer(item.id);
+                        item.timer.isRunning ? stopTimer(item.id) : startTimer(item.id);
+                      }}
+                      disabled={activeTimerId && activeTimerId !== item.id}
                 >
                   <MaterialIcons
                     name={item.timer.isRunning ? 'pause' : 'play-arrow'}
@@ -1492,10 +1551,10 @@ export default function ChatbotScreen({ navigation, route }) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.timerButton}
-                  onPress={() => {
-                    rotateTimer();
-                    resetTimer(item.id);
-                  }}
+                      onPress={() => {
+                        rotateTimer(item.id);
+                        resetTimer(item.id);
+                      }}
                 >
                   <MaterialIcons
                     name="refresh"
@@ -1503,6 +1562,8 @@ export default function ChatbotScreen({ navigation, route }) {
                     color={isDarkMode ? '#FFFFFF' : '#000000'}
                   />
                 </TouchableOpacity>
+                  </>
+                )}
               </View>
             </Animated.View>
           )}
@@ -1687,11 +1748,35 @@ export default function ChatbotScreen({ navigation, route }) {
             const elapsedSeconds = Math.floor((now - startedAt) / 1000);
             const remainingTime = msg.timer.initialTime - elapsedSeconds;
 
+            // เช็คเวลาใกล้หมด (10 วินาทีสุดท้าย)
+            if (remainingTime <= 10 && remainingTime > 0) {
+              // เพิ่ม animation และ haptic feedback
+              pulseTimer(msg.id);
+              if (remainingTime === 10 || remainingTime === 5) {
+                haptics.warning();
+              }
+            }
+
             if (remainingTime <= 0) {
-              // หยุดตัวจับเวลาเมื่อครบกำหนด
               stopTimer(msg.id);
               playTimerSound();
-              Alert.alert('หมดเวลา!', 'ตัวจับเวลาได้สิ้นสุดลงแล้ว');
+              haptics.success();
+              
+              // ส่ง notification เมื่อหมดเวลา
+              Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "⏰ หมดเวลาแล้ว!",
+                  body: `${msg.text} ครบกำหนดเวลาแล้ว`,
+                  sound: true,
+                  priority: 'high',
+                  vibrate: [0, 250, 250, 250],
+                },
+                trigger: null,
+              });
+
+              setPopupMessage('⏰ หมดเวลาแล้ว!');
+              setPopupVisible(true);
+              
               hasChanges = true;
               return {
                 ...msg,
@@ -1708,7 +1793,8 @@ export default function ChatbotScreen({ navigation, route }) {
               ...msg,
               timer: {
                 ...msg.timer,
-                remainingTime
+                remainingTime,
+                isWarning: remainingTime <= 10 // เพิ่ม flag สำหรับสถานะใกล้หมดเวลา
               }
             };
           }
@@ -1724,12 +1810,10 @@ export default function ChatbotScreen({ navigation, route }) {
 
   const handleNewMessage = async () => {
     await playNotificationSound();
-    // โค้ดอื่นๆ...
   };
 
   const handleTimerComplete = async () => {
     await playTimerSound();
-    // ...
   };
 
   useEffect(() => {
@@ -1789,14 +1873,46 @@ export default function ChatbotScreen({ navigation, route }) {
   };
 
   // เพิ่มฟังก์ชันสำหรับการสร้างอนิเมชั่นตัวจับเวลา
-  const pulseTimer = () => {
+  const pulseTimer = (messageId) => {
+    // สร้าง animation values ถ้ายังไม่มี
+    if (!timerAnimations[messageId]) {
+      const newAnimations = {
+        ...timerAnimations,
+        [messageId]: {
+          scale: new Animated.Value(1),
+          rotate: new Animated.Value(0)
+        }
+      };
+      setTimerAnimations(newAnimations);
+      
+      // รอให้ state อัพเดทก่อนเริ่ม animation
+      setTimeout(() => {
+        if (newAnimations[messageId]) {
+          Animated.sequence([
+            Animated.timing(newAnimations[messageId].scale, {
+              toValue: 1.1,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(newAnimations[messageId].scale, {
+              toValue: 1,
+              duration: 200,
+              useNativeDriver: true,
+            })
+          ]).start();
+        }
+      }, 0);
+      return;
+    }
+
+    // ถ้ามี animation values แล้วให้เริ่ม animation ได้เลย
     Animated.sequence([
-      Animated.timing(timerScale, {
+      Animated.timing(timerAnimations[messageId].scale, {
         toValue: 1.1,
         duration: 200,
         useNativeDriver: true,
       }),
-      Animated.timing(timerScale, {
+      Animated.timing(timerAnimations[messageId].scale, {
         toValue: 1,
         duration: 200,
         useNativeDriver: true,
@@ -1804,15 +1920,77 @@ export default function ChatbotScreen({ navigation, route }) {
     ]).start();
   };
 
-  const rotateTimer = () => {
-    timerRotate.setValue(0);
-    Animated.timing(timerRotate, {
+  const rotateTimer = (messageId) => {
+    if (!timerAnimations[messageId]) {
+      const newAnimations = {
+        ...timerAnimations,
+        [messageId]: {
+          scale: new Animated.Value(1),
+          rotate: new Animated.Value(0)
+        }
+      };
+      setTimerAnimations(newAnimations);
+      
+      setTimeout(() => {
+        if (newAnimations[messageId]) {
+          newAnimations[messageId].rotate.setValue(0);
+          Animated.timing(newAnimations[messageId].rotate, {
+            toValue: 1,
+            duration: 500,
+            easing: Easing.elastic(1),
+            useNativeDriver: true,
+          }).start();
+        }
+      }, 0);
+      return;
+    }
+
+    timerAnimations[messageId].rotate.setValue(0);
+    Animated.timing(timerAnimations[messageId].rotate, {
       toValue: 1,
       duration: 500,
       easing: Easing.elastic(1),
       useNativeDriver: true,
     }).start();
   };
+
+  // เพิ่ม useEffect เพื่อโหลด active timer เมื่อเปิดแชท
+  useEffect(() => {
+    if (!chatId) return;
+
+    const loadActiveTimer = async () => {
+      try {
+        const chatRef = doc(db, 'chats', chatId);
+        const chatDoc = await getDoc(chatRef);
+        if (chatDoc.exists() && chatDoc.data().activeTimerId) {
+          setActiveTimerId(chatDoc.data().activeTimerId);
+        }
+      } catch (error) {
+        console.error('Error loading active timer:', error);
+      }
+    };
+
+    loadActiveTimer();
+  }, [chatId]);
+
+  // เพิ่ม useEffect สำหรับขอสิทธิ์ notification เมื่อเปิดแอพ
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  // เพิ่มฟังก์ชันจัดการ notification เมื่อกดที่การแจ้งเตือน
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      
+      // นำผู้ใช้ไปยังข้อความที่เกี่ยวข้อง
+      if (data.messageId) {
+        // TODO: scroll to message
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   return (
     <KeyboardAvoidingView 
@@ -1951,7 +2129,7 @@ export default function ChatbotScreen({ navigation, route }) {
                 .stiffness(180)
                 .mass(0.4)
                 .withInitialValues({
-                  transform: [{ scale: 0.8 }, { translateX: 10 }],
+                  transform: [{ scale: 0.8 }, { translateX: 5 }],
                 })}
                 exiting={FadeOut.duration(150)}
             >
@@ -1982,11 +2160,8 @@ export default function ChatbotScreen({ navigation, route }) {
                 <MaterialIcons
                   name="send"
                   size={22}
-                  color="#000000"
-                  style={[
-                    styles.sendButtonIcon,
-                    { transform: [{ translateX: 1 }] }
-                  ]}
+                  color={isDarkMode ? '#8de89b' : '#6de67b'}
+                  style={styles.sendButtonIcon}
                 />
           </TouchableOpacity>
             </Animated.View>
