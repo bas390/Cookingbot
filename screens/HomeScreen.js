@@ -21,12 +21,13 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, database, dbRef, db } from '../firebase';
 import { ref, query, orderByChild, onValue, set, update, remove } from 'firebase/database';
-import { addDoc, collection, deleteDoc, doc, getDocs, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, where, orderBy, onSnapshot, limit, updateDoc } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { signOut } from 'firebase/auth';
 import { haptics } from '../utils/haptics';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
+import CustomPopup from '../components/CustomPopup';
 
 const ChatItem = React.memo(({ chat, onPress, onDelete, onEdit }) => {
   return (
@@ -49,6 +50,13 @@ export default function HomeScreen({ navigation }) {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const [sortBy, setSortBy] = useState('latest');
   const [refreshing, setRefreshing] = useState(false);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editingChatId, setEditingChatId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [deletingChatId, setDeletingChatId] = useState(null);
+  const [popupMessage, setPopupMessage] = useState('');
+  const [popupVisible, setPopupVisible] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -170,74 +178,69 @@ export default function HomeScreen({ navigation }) {
   };
 
   // ฟังก์ชันแก้ไขชื่อแชท
-  const handleEditChat = () => {
-    if (!newChatName.trim()) {
-      Alert.alert('แจ้งเตือน', 'กรุณาใส่ชื่อแชท');
-      return;
-    }
+  const handleEditTitle = (chatId, currentTitle) => {
+    setEditingChatId(chatId);
+    setEditingTitle(currentTitle);
+    setIsEditModalVisible(true);
+  };
 
-    const user = auth.currentUser;
-    if (!user || !editingChat) return;
+  // เพิ่มฟังก์ชันสำหรับบันทึกการแก้ไข
+  const handleSaveEdit = async () => {
+    try {
+      if (!editingChatId || !editingTitle.trim()) return;
 
-    const chatRef = ref(database, `${dbRef.userChats}/${user.uid}/${editingChat.id}`);
-    update(chatRef, { title: newChatName.trim() })
-      .then(() => {
-        setEditingChat(null);
-        setNewChatName('');
-      })
-      .catch((error) => {
-        console.error('Error updating chat:', error);
-        Alert.alert('ข้อผิดพลาด', 'ไม่สามารถแก้ไขแชทได้ กรุณาลองใหม่');
+      const chatRef = doc(db, 'chats', editingChatId);
+      await updateDoc(chatRef, {
+        title: editingTitle.trim(),
+        updatedAt: new Date().getTime(),
       });
+
+      // อัพเดท UI
+      setChats(prevChats => 
+        prevChats.map(chat => 
+          chat.id === editingChatId 
+            ? { ...chat, title: editingTitle.trim() }
+            : chat
+        )
+      );
+
+      // ปิด Modal และเคลียร์ state
+      setIsEditModalVisible(false);
+      setEditingChatId(null);
+      setEditingTitle('');
+    } catch (error) {
+      console.error('Error editing chat title:', error);
+    }
   };
 
   // ฟังก์ชันลบแชท
-  const handleDeleteChat = async (chatId) => {
+  const handleDeleteChat = (chatId) => {
+    setDeletingChatId(chatId);
+    setIsDeleteModalVisible(true);
+  };
+
+  // เพิ่มฟังก์ชันสำหรับยืนยันการลบ
+  const confirmDelete = async () => {
     try {
-      haptics.heavy();
-      Alert.alert(
-        'ยืนยันการลบ',
-        'คุณต้องการลบแชทนี้ใช่หรือไม่?',
-        [
-          { text: 'ยกเลิก', style: 'cancel' },
-          {
-            text: 'ลบ',
-            onPress: async () => {
-              const currentUser = auth.currentUser;
-              if (!currentUser) return;
+      if (!deletingChatId) return;
 
-              try {
-                // ลบข้อมูลห้องแชท
-                const chatsRef = collection(db, 'chats');
-                const chatQuery = query(
-                  chatsRef,
-                  where('userId', '==', currentUser.uid),
-                  where('type', 'in', ['chat_info', 'message']),
-                  where('chatId', '==', chatId)
-                );
-                const snapshot = await getDocs(chatQuery);
-                
-                const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
-                await Promise.all(deletePromises);
+      const chatRef = doc(db, 'chats', deletingChatId);
+      await deleteDoc(chatRef);
 
-                // ลบเอกสารห้องแชทหลัก
-                const mainChatRef = doc(db, 'chats', chatId);
-                await deleteDoc(mainChatRef);
+      // อัพเดท UI
+      setChats(prevChats => prevChats.filter(chat => chat.id !== deletingChatId));
 
-              } catch (error) {
-                console.error('Error deleting chat:', error);
-                Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่อีกครั้ง');
-              }
-            },
-            style: 'destructive'
-          },
-        ]
-      );
-      haptics.success();
+      // ปิด Modal และเคลียร์ state
+      setIsDeleteModalVisible(false);
+      setDeletingChatId(null);
+      
+      // แสดง popup แจ้งเตือนสำเร็จ
+      setPopupMessage('ลบแชทเรียบร้อยแล้ว');
+      setPopupVisible(true);
     } catch (error) {
-      haptics.error();
       console.error('Error deleting chat:', error);
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถลบแชทได้ กรุณาลองใหม่อีกครั้ง');
+      setPopupMessage('ไม่สามารถลบแชทได้ กรุณาลองใหม่');
+      setPopupVisible(true);
     }
   };
 
@@ -332,7 +335,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.rightActions}>
           <TouchableOpacity 
             style={[styles.actionButton, styles.editButton]}
-            onPress={() => handleEditChat(item)}
+            onPress={() => handleEditTitle(item.id, item.title)}
           >
             <MaterialIcons name="edit" size={24} color="#FFFFFF" />
           </TouchableOpacity>
@@ -538,60 +541,81 @@ export default function HomeScreen({ navigation }) {
       shadowOpacity: 0.25,
       shadowRadius: 4,
     },
-    modalContainer: {
+    modalOverlay: {
       flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      padding: 16,
+      paddingHorizontal: 20,
     },
     modalContent: {
       width: '100%',
-      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      maxWidth: 320,
       borderRadius: 16,
       padding: 24,
-      elevation: 5,
+      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
       shadowOpacity: 0.25,
-      shadowRadius: 4,
+      shadowRadius: 3.84,
+      elevation: 5,
     },
     modalTitle: {
-      fontSize: 24,
-      fontWeight: '700',
+      fontSize: 20,
+      fontWeight: '600',
       color: isDarkMode ? '#FFFFFF' : '#000000',
       marginBottom: 16,
+      textAlign: 'center',
+    },
+    modalText: {
+      fontSize: 16,
+      color: isDarkMode ? '#CCCCCC' : '#666666',
+      marginBottom: 24,
+      textAlign: 'center',
+      lineHeight: 22,
     },
     modalInput: {
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      padding: 12,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      marginBottom: 16,
+      marginBottom: 24,
     },
     modalButtons: {
       flexDirection: 'row',
-      justifyContent: 'flex-end',
+      justifyContent: 'center',
       gap: 12,
     },
     modalButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 8,
-      minWidth: 80,
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
       alignItems: 'center',
     },
     cancelButton: {
       backgroundColor: isDarkMode ? '#333' : '#E5E5E5',
     },
-    confirmButton: {
+    createButton: {
       backgroundColor: '#6de67b',
+    },
+    deleteButton: {
+      backgroundColor: '#FF3B30',
     },
     modalButtonText: {
       fontSize: 16,
       fontWeight: '600',
+    },
+    cancelButtonText: {
+      color: isDarkMode ? '#FFFFFF' : '#000000',
+    },
+    createButtonText: {
+      color: '#000000',
+    },
+    deleteButtonText: {
       color: '#FFFFFF',
     },
     menuButton: {
@@ -714,6 +738,11 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <CustomPopup
+        visible={popupVisible}
+        message={popupMessage}
+        onClose={() => setPopupVisible(false)}
+      />
       <Animated.View style={{ opacity: fadeAnim }}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -839,37 +868,125 @@ export default function HomeScreen({ navigation }) {
       </TouchableOpacity>
 
       <Modal
-        animationType="slide"
-        transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        transparent={true}
+        animationType="fade"
       >
-        <View style={styles.modalContainer}>
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>สร้างแชทใหม่</Text>
+            
             <TextInput
               style={styles.modalInput}
-              placeholder="ชื่อแชท"
-              placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
               value={newChatName}
               onChangeText={setNewChatName}
-              autoFocus
+              placeholder="ชื่อแชท"
+              placeholderTextColor={isDarkMode ? '#999' : '#666'}
             />
+
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   setModalVisible(false);
                   setNewChatName('');
                 }}
               >
-                <Text style={styles.modalButtonText}>ยกเลิก</Text>
+                <Text style={[styles.modalButtonText, styles.cancelButtonText]}>
+                  ยกเลิก
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.confirmButton]}
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.createButton]}
                 onPress={handleAddChat}
               >
-                <Text style={styles.modalButtonText}>สร้าง</Text>
+                <Text style={[styles.modalButtonText, styles.createButtonText]}>
+                  สร้าง
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isEditModalVisible}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>แก้ไขชื่อแชท</Text>
+            
+            <TextInput
+              style={styles.modalInput}
+              value={editingTitle}
+              onChangeText={setEditingTitle}
+              placeholder="ใส่ชื่อใหม่"
+              placeholderTextColor={isDarkMode ? '#999' : '#666'}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setIsEditModalVisible(false);
+                  setEditingChatId(null);
+                  setEditingTitle('');
+                }}
+              >
+                <Text style={[styles.modalButtonText, styles.cancelButtonText]}>
+                  ยกเลิก
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.createButton]}
+                onPress={handleSaveEdit}
+              >
+                <Text style={[styles.modalButtonText, styles.createButtonText]}>
+                  บันทึก
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isDeleteModalVisible}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>ยืนยันการลบแชท</Text>
+            
+            <Text style={styles.modalText}>
+              คุณต้องการลบแชทนี้ใช่หรือไม่?
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setIsDeleteModalVisible(false);
+                  setDeletingChatId(null);
+                }}
+              >
+                <Text style={[styles.modalButtonText, styles.cancelButtonText]}>
+                  ยกเลิก
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDelete}
+              >
+                <Text style={[styles.modalButtonText, styles.deleteButtonText]}>
+                  ลบ
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

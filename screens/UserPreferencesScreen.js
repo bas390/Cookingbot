@@ -14,8 +14,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { FOOD_ALLERGIES, DIFFICULTY_LEVELS } from '../constants/foodCategories';
 import { db, auth } from '../firebase';
-import { collection, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { haptics } from '../utils/haptics';
+import CustomPopup from '../components/CustomPopup';
 
 const difficultyLabels = {
   beginner: 'มือใหม่',
@@ -37,6 +38,8 @@ export default function UserPreferencesScreen({ navigation }) {
   const [allergies, setAllergies] = useState([]);
   const [skillLevel, setSkillLevel] = useState(DIFFICULTY_LEVELS.BEGINNER);
   const [isLoading, setIsLoading] = useState(true);
+  const [popupVisible, setPopupVisible] = useState(false);
+  const [popupMessage, setPopupMessage] = useState('');
 
   useEffect(() => {
     loadUserPreferences();
@@ -63,22 +66,29 @@ export default function UserPreferencesScreen({ navigation }) {
 
   const savePreferences = async () => {
     try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
+      const user = auth.currentUser;
+      if (!user) return;
 
-      await setDoc(doc(db, 'userPreferences', userId), {
-        allergies,
-        skillLevel,
-        updatedAt: new Date().getTime()
+      const userRef = doc(db, 'userPreferences', user.uid);
+      await setDoc(userRef, {
+        allergies: allergies,
+        skillLevel: skillLevel,
+        updatedAt: new Date().getTime(),
       });
 
-      haptics.success();
-      Alert.alert('สำเร็จ', 'บันทึกการตั้งค่าเรียบร้อย');
-      navigation.goBack();
+      // แสดง popup แจ้งเตือนสำเร็จ
+      setPopupMessage('บันทึกการตั้งค่าเรียบร้อยแล้ว');
+      setPopupVisible(true);
+
+      // รอให้ popup แสดง 1.5 วินาทีแล้วกลับไปหน้าก่อนหน้า
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1500);
+
     } catch (error) {
       console.error('Error saving preferences:', error);
-      haptics.error();
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถบันทึกการตั้งค่าได้');
+      setPopupMessage('ไม่สามารถบันทึกการตั้งค่าได้ กรุณาลองใหม่');
+      setPopupVisible(true);
     }
   };
 
@@ -203,6 +213,12 @@ export default function UserPreferencesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <CustomPopup
+        visible={popupVisible}
+        message={popupMessage}
+        onClose={() => setPopupVisible(false)}
+      />
+
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity 

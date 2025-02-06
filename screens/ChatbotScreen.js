@@ -358,23 +358,30 @@ export default function ChatbotScreen({ navigation, route }) {
       borderTopWidth: 1,
       borderTopColor: isDarkMode ? '#333' : '#E5E5E5',
       backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+      height: Platform.OS === 'ios' ? 80 : 64,
+      paddingBottom: Platform.OS === 'ios' ? 24 : 0,
     },
     inputWrapper: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 16,
       paddingVertical: 8,
-      paddingBottom: Platform.OS === 'ios' ? 34 : 8,
+      height: Platform.OS === 'ios' ? 70 : 64,
+      gap: 8,
+    },
+    inputAnimatedContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      transition: 'all 0.3s ease',
     },
     input: {
-      flex: 1,
+      height: 40,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
+      paddingHorizontal: 16,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 20,
-      marginRight: 8,
+      flex: 1,
     },
     header: {
       flexDirection: 'row',
@@ -517,34 +524,33 @@ export default function ChatbotScreen({ navigation, route }) {
       textAlign: 'left',
     },
     input: {
-      flex: 1,
+      height: 40,
       fontSize: 16,
       color: isDarkMode ? '#FFFFFF' : '#000000',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
+      paddingHorizontal: 16,
       backgroundColor: isDarkMode ? '#333' : '#F5F5F5',
       borderRadius: 20,
-      marginRight: 8,
+      flex: 1,
     },
     sendButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: '#6de67b',
       justifyContent: 'center',
       alignItems: 'center',
-      marginLeft: 8,
       shadowColor: '#000',
       shadowOffset: {
         width: 0,
         height: 2,
       },
-      shadowOpacity: 0.2,
+      shadowOpacity: 0.15,
       shadowRadius: 3,
-      elevation: 4,
+      elevation: 3,
+      transform: [{ scale: 1.0 }],
     },
     sendButtonIcon: {
-      transform: [{ translateX: 1 }, { translateY: -1 }],
+      marginLeft: 2,
     },
     loadingContainer: {
       flex: 1,
@@ -1812,7 +1818,7 @@ export default function ChatbotScreen({ navigation, route }) {
     <KeyboardAvoidingView 
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? -10 : 0}
     >
       <CustomPopup
         visible={popupVisible}
@@ -1835,195 +1841,193 @@ export default function ChatbotScreen({ navigation, route }) {
         }}
       />
       
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-          <MaterialIcons 
-            name="arrow-back" 
-            size={24} 
-            color={isDarkMode ? '#FFFFFF' : '#000000'} 
-          />
-          </TouchableOpacity>
-        <Text style={styles.headerTitle}>{route.params?.title || 'Chat'}</Text>
-        </View>
-
-        <View style={styles.headerButtons}>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={clearMessages}
-          >
-            <MaterialIcons name="delete-outline" size={24} color={isDarkMode ? '#FFFFFF' : '#000000'} />
-          </TouchableOpacity>
-        
-          <TouchableOpacity 
-          style={[
-            styles.headerButton,
-            useGPT && { backgroundColor: '#6de67b' }  // เพิ่มสีเมื่อเปิดใช้ GPT Mode
-          ]}
-          onPress={toggleGPTMode}
-          >
-            <MaterialIcons 
-              name={useGPT ? 'psychology' : 'psychology-alt'} 
-              size={24} 
-            color={useGPT ? '#000000' : (isDarkMode ? '#FFFFFF' : '#000000')} 
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={toggleTheme}
-          >
-            <MaterialIcons 
-              name={isDarkMode ? 'light-mode' : 'dark-mode'} 
-              size={24} 
-              color={isDarkMode ? '#FFFFFF' : '#000000'} 
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
       <View style={styles.content}>
-        <Animated.FlatList
-          onScroll={Animated.event(
-          [{ 
-            nativeEvent: { 
-              contentOffset: { y: scrollY } 
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <MaterialIcons 
+                name="arrow-back" 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{route.params?.title || 'Chat'}</Text>
+            </View>
+
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={[
+                styles.headerButton,
+                useGPT && { backgroundColor: '#6de67b' }
+              ]}
+              onPress={toggleGPTMode}
+            >
+              <MaterialIcons 
+                name={useGPT ? 'psychology' : 'psychology-alt'} 
+                size={24} 
+                color={useGPT ? '#000000' : (isDarkMode ? '#FFFFFF' : '#000000')} 
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={toggleTheme}
+            >
+              <MaterialIcons 
+                name={isDarkMode ? 'light-mode' : 'dark-mode'} 
+                size={24} 
+                color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+          <Animated.FlatList
+            onScroll={Animated.event(
+            [{ 
+              nativeEvent: { 
+                contentOffset: { y: scrollY } 
+              }
+            }],
+              { useNativeDriver: true }
+            )}
+          data={[
+            ...(isTyping ? [{ id: 'typing', isTyping: true }] : []),
+            ...messages
+          ]}
+          renderItem={({ item }) => {
+            if (item.isTyping) {
+              return <BotTyping />;
             }
-          }],
-            { useNativeDriver: true }
-          )}
-        data={[
-          ...(isTyping ? [{ id: 'typing', isTyping: true }] : []),
-          ...messages
-        ]}
-        renderItem={({ item }) => {
-          if (item.isTyping) {
-            return <BotTyping />;
-          }
-          return renderMessage({ item });
-        }}
-          keyExtractor={(item) => item.id}
-          ref={flatListRef}
-          inverted={true}
-        contentContainerStyle={[
-          styles.chatContent,
-          { paddingBottom: Platform.OS === 'ios' ? 90 : 80 }
-        ]}
-          style={styles.messageList}
-          onEndReached={loadMoreMessages}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
-          refreshControl={
-            <RefreshControl
-              refreshing={isLoadingMore}
-              onRefresh={loadMoreMessages}
-              tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
-            />
-          }
-        />
+            return renderMessage({ item });
+          }}
+            keyExtractor={(item) => item.id}
+            ref={flatListRef}
+            inverted={true}
+          contentContainerStyle={[
+            styles.chatContent,
+            { paddingBottom: Platform.OS === 'ios' ? 90 : 80 }
+          ]}
+            style={styles.messageList}
+            onEndReached={loadMoreMessages}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={isLoadingMore ? <ActivityIndicator /> : null}
+            refreshControl={
+              <RefreshControl
+                refreshing={isLoadingMore}
+                onRefresh={loadMoreMessages}
+                tintColor={isDarkMode ? '#FFFFFF' : '#000000'}
+              />
+            }
+          />
       </View>
 
-      <View style={[
-        styles.inputContainer,
-        { backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF' }
-      ]}>
-        <View style={styles.inputWrapper}>
-        <TextInput
-          style={styles.input}
-          value={input}
-            onChangeText={handleInputChange}
-          placeholder="พิมพ์ข้อความ..."
-          placeholderTextColor="#999999"
-          multiline={false}
-          maxHeight={50}
+      <View style={styles.inputContainer}>
+          <View style={styles.inputWrapper}>
+          <Animated.View 
+            style={[
+              styles.inputAnimatedContainer,
+              { flex: input.trim() ? 0.95 : 1 }
+            ]}
+            entering={FadeIn.springify().damping(15)}
+          >
+          <TextInput
+            style={styles.input}
+            value={input}
+              onChangeText={handleInputChange}
+            placeholder="พิมพ์ข้อความ..."
+            placeholderTextColor="#999999"
+            multiline={false}
           />
+          </Animated.View>
           
           {input.trim() && (
             <Animated.View
               entering={SlideInRight.springify()
-                .damping(25)
-                .stiffness(120)
-                .mass(0.6)
+                .damping(15)
+                .stiffness(180)
+                .mass(0.4)
                 .withInitialValues({
-                  transform: [
-                    { scale: 0.5 }, 
-                    { translateX: 50 }
-                  ],
+                  transform: [{ scale: 0.8 }, { translateX: 10 }],
                 })}
-                exiting={FadeOut.duration(150)
-                  .withInitialValues({
-                    transform: [
-                      { scale: 1 },
-                      { translateX: 0 }
-                    ],
-                    opacity: 1
-                  })}
+                exiting={FadeOut.duration(150)}
             >
           <TouchableOpacity 
+                style={styles.sendButton}
+                onPress={() => {
+                  handleSend();
+                  haptics.light();
+                }}
+                activeOpacity={0.85}
+                onPressIn={() => {
+                  Animated.spring(new Animated.Value(1), {
+                    toValue: 0.95,
+                    useNativeDriver: true,
+                    tension: 100,
+                    friction: 7
+                  }).start();
+                }}
+                onPressOut={() => {
+                  Animated.spring(new Animated.Value(0.95), {
+                    toValue: 1,
+                    useNativeDriver: true,
+                    tension: 100,
+                    friction: 7
+                  }).start();
+                }}
+              >
+                <MaterialIcons
+                  name="send"
+                  size={22}
+                  color="#000000"
                   style={[
-                    styles.sendButton,
-                    { 
-                      transform: [
-                        { scale: 1 },
-                        { rotate: '-10deg' }
-                      ] 
-                    }
+                    styles.sendButtonIcon,
+                    { transform: [{ translateX: 1 }] }
                   ]}
-                  onPress={() => {
-                    handleSend();
-                    setInput('');
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <MaterialIcons
-                    name="send"
-                    size={20}
-                    color="#FFFFFF"
-                    style={styles.sendButtonIcon}
-                  />
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-        </View>
+                />
+          </TouchableOpacity>
+            </Animated.View>
+          )}
+      </View>
       </View>
 
-    {isSelectionMode && (
-      <View style={styles.selectionHeader}>
-        <Text style={styles.selectionCount}>
-          เลือกแล้ว {selectedMessages.length} ข้อความ
-        </Text>
-        <View style={styles.selectionActions}>
-          {selectedMessages.length > 0 && (
-            <TouchableOpacity 
-              onPress={handleDeleteSelected}
+      {isSelectionMode && (
+        <View style={styles.selectionHeader}>
+          <Text style={styles.selectionCount}>
+            เลือกแล้ว {selectedMessages.length} ข้อความ
+          </Text>
+          <View style={styles.selectionActions}>
+            {selectedMessages.length > 0 && (
+              <TouchableOpacity 
+                onPress={handleDeleteSelected}
+                style={styles.headerButton}
+              >
+                <MaterialIcons
+                  name="delete"
+                  size={24}
+                  color={isDarkMode ? '#FF453A' : '#FF3B30'}
+                />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => {
+                setIsSelectionMode(false);
+                setSelectedMessages([]);
+              }}
               style={styles.headerButton}
             >
               <MaterialIcons
-                name="delete"
+                name="close"
                 size={24}
-                color={isDarkMode ? '#FF453A' : '#FF3B30'}
+                color={isDarkMode ? '#FFFFFF' : '#000000'}
               />
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={() => {
-              setIsSelectionMode(false);
-              setSelectedMessages([]);
-            }}
-            style={styles.headerButton}
-          >
-            <MaterialIcons
-              name="close"
-              size={24}
-              color={isDarkMode ? '#FFFFFF' : '#000000'}
-            />
-          </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    )}
-  </KeyboardAvoidingView>
-);
+      )}
+    </KeyboardAvoidingView>
+  );
 }
