@@ -11,94 +11,72 @@ import { useTheme } from '../context/ThemeContext';
 
 const CustomPopup = ({ visible, message, onClose }) => {
   const { isDarkMode } = useTheme();
-  const animatedValue = React.useRef(new Animated.Value(0)).current;
+  const translateY = new Animated.Value(-100);
 
   useEffect(() => {
     if (visible) {
-      // Show animation
-      Animated.spring(animatedValue, {
-        toValue: 1,
+      Animated.spring(translateY, {
+        toValue: Platform.OS === 'ios' ? 50 : 20,
         useNativeDriver: true,
         tension: 80,
-        friction: 9,
+        friction: 10
       }).start();
 
-      // Auto hide after 1.5 seconds
+      // ปิด popup อัตโนมัติหลัง 2 วินาที
       const timer = setTimeout(() => {
         hidePopup();
-      }, 1500);
+      }, 2000);
 
       return () => clearTimeout(timer);
     }
   }, [visible]);
 
   const hidePopup = () => {
-    Animated.timing(animatedValue, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
+    Animated.timing(translateY, {
+      toValue: -100,
+      duration: 300,
+      useNativeDriver: true
     }).start(() => onClose());
   };
 
   if (!visible) return null;
 
   return (
-    <View style={styles.container}>
-      <Animated.View
-        style={[
-          styles.popup,
-          {
-            opacity: animatedValue,
-            transform: [
-              {
-                scale: animatedValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.8, 1],
-                }),
-              },
-            ],
-            backgroundColor: isDarkMode ? 'rgba(51, 51, 51, 0.95)' : 'rgba(0, 0, 0, 0.85)',
-          },
-        ]}
-      >
-        <View style={styles.content}>
-          <Text style={[
-            styles.message, 
-            { color: '#FFFFFF' }
-          ]}>
-            {message}
-          </Text>
-        </View>
-      </Animated.View>
-    </View>
+    <Animated.View 
+      style={[
+        styles.container,
+        {
+          transform: [{ translateY }],
+          backgroundColor: isDarkMode ? '#333333' : '#FFFFFF',
+        }
+      ]}
+    >
+      <View style={styles.content}>
+        <Text style={[
+          styles.message,
+          { color: isDarkMode ? '#FFFFFF' : '#000000' }
+        ]}>
+          {message}
+        </Text>
+      </View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 90 : 60,
-    left: 16,
-    right: 16,
-    alignItems: 'center',
-    zIndex: 1000,
-    pointerEvents: 'none',
-  },
-  popup: {
-    minWidth: 120,
-    maxWidth: '80%',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    top: 0,
+    left: 20,
+    right: 20,
+    padding: 16,
+    borderRadius: 12,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
     elevation: 5,
+    zIndex: 9999,
   },
   content: {
     alignItems: 'center',
@@ -107,8 +85,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
-    color: '#FFFFFF',
-  },
+  }
 });
 
 export default CustomPopup; 

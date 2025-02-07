@@ -16,14 +16,25 @@ let receiveSound = null;
 
 // โหลดเสียงเมื่อแอพเริ่มทำงาน
 export const initSounds = async () => {
-  sendSound = await loadSound(require('../assets/sounds/send.mp3'));
-  receiveSound = await loadSound(require('../assets/sounds/receive.mp3'));
+  try {
+    const { sound: send } = await Audio.Sound.createAsync(
+      require('../assets/sounds/send.mp3')
+    );
+    const { sound: receive } = await Audio.Sound.createAsync(
+      require('../assets/sounds/receive.mp3')
+    );
+    sendSound = send;
+    receiveSound = receive;
+  } catch (error) {
+    console.error('Error initializing sounds:', error);
+  }
 };
 
 // เล่นเสียงส่งข้อความ
 export const playSendSound = async () => {
   try {
     if (sendSound) {
+      await sendSound.stopAsync();
       await sendSound.setPositionAsync(0);
       await sendSound.playAsync();
     }
@@ -36,6 +47,7 @@ export const playSendSound = async () => {
 export const playReceiveSound = async () => {
   try {
     if (receiveSound) {
+      await receiveSound.stopAsync();
       await receiveSound.setPositionAsync(0);
       await receiveSound.playAsync();
     }

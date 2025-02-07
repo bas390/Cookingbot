@@ -39,6 +39,8 @@ import { extractIngredients, findRecipesByIngredients, rankRecipesByIngredients 
 import { findFAQAnswer } from '../utils/faqUtils';
 import { SlideInRight, SlideInLeft, FadeIn, FadeOut, withSpring, runOnJS } from 'react-native-reanimated';
 import * as Notifications from 'expo-notifications';
+import { getBotIcon } from '../utils/imageUtils';
+import { BotIcon } from '../utils/imageUtils';
 
 // ตั้งค่า notifications ที่ส่วนบนของไฟล์
 Notifications.setNotificationHandler({
@@ -56,7 +58,7 @@ const requestNotificationPermission = async () => {
 };
 
 // BotTyping Component
-const BotTyping = () => {
+const BotTyping = ({ useGPT }) => {  // รับ prop useGPT
   const { isDarkMode } = useTheme();
   const dotAnimation = useRef(new Animated.Value(0)).current;
 
@@ -142,10 +144,10 @@ const BotTyping = () => {
   return (
     <View style={[styles.messageRow, styles.botRow]}>
       <View style={styles.avatarContainer}>
-        <Image 
-          source={require('../assets/icon.png')} 
-          style={styles.chefImage}
-          resizeMode="contain"
+        <BotIcon 
+          size={24}
+          color={isDarkMode ? '#FFFFFF' : '#000000'} 
+          isAI={useGPT}
         />
         <View style={styles.statusDot} />
       </View>
@@ -239,10 +241,10 @@ const Message = React.memo(({ message, onPin, onDelete }) => {
     >
       {!isUser && (
         <View style={styles.avatarContainer}>
-          <Image 
-            source={require('../assets/icon.png')} 
-            style={styles.chefImage}
-            resizeMode="contain"
+          <BotIcon 
+            size={24}
+            color={isDarkMode ? '#FFFFFF' : '#000000'} 
+            isAI={message.isAI}  // ใช้ค่า isAI จากข้อความ
           />
           <View style={styles.statusDot} />
         </View>
@@ -342,23 +344,15 @@ export default function ChatbotScreen({ navigation, route }) {
     loadGPTMode();
   }, []);
 
-  // แก้ไขฟังก์ชันสลับโหมด
-  const toggleGPTMode = async () => {
-    try {
-      const newMode = !useGPT;
-      await AsyncStorage.setItem('useGPT', JSON.stringify(newMode));
-      setUseGPT(newMode);
-      
-      // แสดง popup แจ้งเตือนการเปลี่ยนโหมด
-      setPopupMessage(newMode ? 'เปลี่ยนเป็นโหมด AI แล้ว' : 'เปลี่ยนเป็นโหมดพื้นฐานแล้ว');
+  // แก้ไขส่วน toggleGPTMode
+  const toggleGPTMode = () => {
+    setUseGPT(!useGPT);
+    // เคลียร์ popup เก่าก่อนแสดง popup ใหม่
+    setPopupVisible(false);
+    setTimeout(() => {
+      setPopupMessage(!useGPT ? 'เปลี่ยนเป็นโหมด AI แล้ว' : 'เปลี่ยนเป็นโหมดพื้นฐานแล้ว');
       setPopupVisible(true);
-      
-      // สั่นเพื่อให้ feedback
-      haptics.medium();
-    } catch (error) {
-      console.error('Error saving GPT mode:', error);
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเปลี่ยนโหมดได้');
-    }
+    }, 100);
   };
 
   // สร้าง styles ด้วย useMemo
@@ -366,6 +360,7 @@ export default function ChatbotScreen({ navigation, route }) {
     container: {
       flex: 1,
       backgroundColor: isDarkMode ? '#121212' : '#FFFFFF',
+      position: 'relative', // เพิ่ม position relative
     },
     content: {
       flex: 1,
@@ -1121,7 +1116,8 @@ export default function ChatbotScreen({ navigation, route }) {
             initialTime: minutes * 60,
             remainingTime: minutes * 60,
             isRunning: false
-          }
+          },
+          isAI: useGPT  // เพิ่มฟิลด์ isAI
         };
         await addDoc(messagesRef, botMessage);
         await playReceiveSound();
@@ -1140,7 +1136,30 @@ export default function ChatbotScreen({ navigation, route }) {
               messages: [
                 {
                   role: "system",
-                  content: `คุณเป็นผู้เชี่ยวชาญด้านอาหารไทย คอยให้คำแนะนำเกี่ยวกับการทำอาหาร วัตถุดิบ และเคล็ดลับต่างๆ`
+                  content: `คุณเป็นเชฟอาหารไทยที่มีประสบการณ์มากกว่า 20 ปี เชี่ยวชาญอาหารไทยทุกภูมิภาค
+
+คำแนะนำในการตอบ:
+1. ให้ข้อมูลอาหารไทยที่ถูกต้องตามตำรับดั้งเดิม
+2. อธิบายวัตถุดิบที่ใช้จริงในอาหารไทย:
+   - ระบุชื่อวัตถุดิบภาษาไทยที่ถูกต้อง
+   - บอกลักษณะวัตถุดิบที่ดี
+   - แนะนำวิธีเลือกวัตถุดิบ
+3. อธิบายเทคนิคการทำอาหารไทยแบบดั้งเดิม:
+   - วิธีการโขลก ตำ คั่ว ผัด ต้ม แกง
+   - การปรุงรสให้ได้รสชาติแท้
+   - ขั้นตอนสำคัญที่ต้องระวัง
+4. ให้ความรู้เพิ่มเติม:
+   - ที่มาของอาหาร
+   - ความแตกต่างแต่ละท้องถิ่น
+   - วิธีการรับประทานที่ถูกต้อง
+5. แนะนำเครื่องปรุงไทยแท้:
+   - น้ำปลา กะปิ น้ำปลาร้า 
+   - พริกแห้ง พริกสด
+   - สมุนไพรไทย
+
+ข้อมูลผู้ใช้:
+- แพ้อาหาร: ${userPreferences?.allergies?.join(', ') || 'ไม่มี'}
+- ระดับความเชี่ยวชาญ: ${userPreferences?.skillLevel || 'เริ่มต้น'}`
                 },
                 {
                   role: "user",
@@ -1171,7 +1190,8 @@ export default function ChatbotScreen({ navigation, route }) {
         userId: currentUser.uid,
         chatId: chatId,
         type: 'message',
-        createdAt: new Date().getTime()
+        createdAt: new Date().getTime(),
+        isAI: useGPT  // เพิ่มฟิลด์ isAI
       };
 
       await addDoc(messagesRef, botMessage);
@@ -1187,6 +1207,7 @@ export default function ChatbotScreen({ navigation, route }) {
     }
   };
 
+  // แก้ไขฟังก์ชัน getChatGPTResponse
   const getChatGPTResponse = async (userMessage) => {
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -1200,47 +1221,51 @@ export default function ChatbotScreen({ navigation, route }) {
           messages: [
             {
               role: "system",
-              content: `คุณเป็นผู้เชี่ยวชาญด้านอาหารไทยและอาหารนานาชาติ 
+              content: `คุณเป็นผู้เชี่ยวชาญด้านอาหารไทยโดยเฉพาะ
+
+            คำแนะนำในการตอบ:
+            1. เน้นแนะนำอาหารไทยเป็นหลัก ไม่แนะนำอาหารต่างประเทศ
+            2. อธิบายเทคนิคการทำอาหารไทยอย่างละเอียด:
+               - การปรุงรสให้สมดุล (เปรี้ยว หวาน เค็ม เผ็ด)
+               - เทคนิคการสับ ตำ โขลก คั่ว
+               - การเลือกและเตรียมวัตถุดิบ
+               - ขั้นตอนที่ต้องระวังเป็นพิเศษ
+            3. แนะนำเครื่องปรุงและสมุนไพรไทยที่สำคัญ
+            4. ให้เกร็ดความรู้เกี่ยวกับอาหารไทย เช่น:
+               - ประวัติความเป็นมา
+               - ความแตกต่างของแต่ละภูมิภาค
+               - การดัดแปลงให้เหมาะกับยุคสมัย
+            5. ปรับความละเอียดตามระดับความเชี่ยวชาญของผู้ใช้
 
             ข้อมูลผู้ใช้:
             - แพ้อาหารเหล่านี้: ${userPreferences?.allergies?.join(', ') || 'ไม่มี'} 
             - ไม่ทานอาหารเหล่านี้: ${userPreferences?.restrictions?.join(', ') || 'ไม่มี'}
-            - ระดับความเชี่ยวชาญ: ${userPreferences?.skillLevel || 'ระดับเริ่มต้น'}
+            - ระดับความเชี่ยวชาญ: ${userPreferences?.skillLevel || 'ระดับเริ่มต้น'}`
+          },
+          {
+            role: "user",
+            content: userMessage
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000
+      })
+    });
 
-            คำแนะนำในการตอบ:
-            1. ห้ามแนะนำเมนูที่มีส่วนประกอบที่ผู้ใช้แพ้หรือไม่ทาน
-            2. ปรับความละเอียดของคำอธิบายตามระดับความเชี่ยวชาญ
-            3. อธิบายเทคนิคการทำอาหารไทยอย่างละเอียด เช่น:
-               - การปรุงรส้ห้สมดุล (เปรี้ยว หวาน เค็ม เผ็ด)
-               - เทคนิคการสับ ตำ โขลก คั่ว
-               - การเลือกและเตรียมวัตถุดิบ
-               - ขั้นตอนที่ต้องระวังเป็นพิเศษ
-            4. แนะนำเครื่องปรุงและสมุนไพรไทยที่สำคัญ`
-            },
-            {
-              role: "user",
-              content: userMessage
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API Error Response:', errorData);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${JSON.stringify(errorData)}`);
-      }
-
-      const data = await response.json();
-      console.log('Response received:', data);
-      return data.choices[0].message.content;
-
-    } catch (error) {
-      console.error('ChatGPT API Error:', error);
-      return 'ขออภัย ไม่สามารถเชื่อมต่อกับ ChatGPT ได้ในขณะนี้';
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('API Error Response:', errorData);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${JSON.stringify(errorData)}`);
     }
+
+    const data = await response.json();
+    console.log('Response received:', data);
+    return data.choices[0].message.content;
+
+  } catch (error) {
+    console.error('ChatGPT API Error:', error);
+    return 'ขออภัย ไม่สามารถเชื่อมต่อกับ ChatGPT ได้ในขณะนี้';
+  }
   };
 
   const handleTimerMessage = async (minutes) => {
@@ -1484,12 +1509,11 @@ export default function ChatbotScreen({ navigation, route }) {
       >
         {!isUser && (
           <View style={styles.avatarContainer}>
-            <Image 
-              source={require('../assets/icon.png')} 
-              style={styles.chefImage}
-              resizeMode="contain"
+            <BotIcon 
+              size={24}
+              color={isDarkMode ? '#FFFFFF' : '#000000'} 
+              isAI={item.isAI}  // ใช้ค่า isAI จากข้อความ
             />
-            <View style={styles.statusDot} />
           </View>
         )}
         <View
@@ -2001,7 +2025,14 @@ export default function ChatbotScreen({ navigation, route }) {
       <CustomPopup
         visible={popupVisible}
         message={popupMessage}
-        onClose={() => setPopupVisible(false)}
+        onClose={() => {
+          setPopupVisible(false);
+          setPopupMessage(''); // เคลียร์ข้อความเมื่อปิด
+        }}
+        style={{ 
+          zIndex: 9999, // เพิ่ม zIndex
+          elevation: 9999 // สำหรับ Android
+        }}
       />
 
       <MessageOptionsMenu
@@ -2024,7 +2055,15 @@ export default function ChatbotScreen({ navigation, route }) {
           <View style={styles.headerLeft}>
             <TouchableOpacity 
               style={styles.backButton}
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                // เช็คว่ามีหน้าก่อนหน้าหรือไม่
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  // ถ้าไม่มีหน้าก่อนหน้า ให้ไปที่หน้า Home
+                  navigation.replace('Home');
+                }
+              }}
             >
               <MaterialIcons 
                 name="arrow-back" 
@@ -2032,7 +2071,7 @@ export default function ChatbotScreen({ navigation, route }) {
                 color={isDarkMode ? '#FFFFFF' : '#000000'} 
               />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>{route.params?.title || 'Chat'}</Text>
+            <Text style={styles.headerTitle}>แชท</Text>
             </View>
 
           <View style={styles.headerButtons}>
@@ -2078,7 +2117,7 @@ export default function ChatbotScreen({ navigation, route }) {
           ]}
           renderItem={({ item }) => {
             if (item.isTyping) {
-              return <BotTyping />;
+              return <BotTyping useGPT={useGPT} />;  // ส่ง prop useGPT
             }
             return renderMessage({ item });
           }}

@@ -14,6 +14,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { collection, query, where, orderBy, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useTheme } from '../context/ThemeContext';
+import { getBotIcon } from '../utils/imageUtils';
 
 export default function PinnedMessagesScreen({ navigation }) {
   const { isDarkMode } = useTheme();
@@ -83,7 +84,7 @@ export default function PinnedMessagesScreen({ navigation }) {
         {!isUser && (
           <View style={styles.avatarContainer}>
             <Image 
-              source={require('../assets/icon.png')} 
+              source={getBotIcon()}
               style={styles.chefImage}
               resizeMode="contain"
             />
