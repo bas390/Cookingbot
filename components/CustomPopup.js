@@ -13,6 +13,17 @@ const CustomPopup = ({ visible, message, onClose }) => {
   const { isDarkMode } = useTheme();
   const translateY = new Animated.Value(-100);
 
+  // Validate props
+  if (typeof visible !== 'boolean') {
+    console.warn('CustomPopup: visible prop should be boolean');
+    return null;
+  }
+  
+  if (!message) {
+    console.warn('CustomPopup: message is required');
+    return null;
+  }
+
   useEffect(() => {
     if (visible) {
       Animated.spring(translateY, {

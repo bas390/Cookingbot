@@ -345,14 +345,28 @@ export default function ChatbotScreen({ navigation, route }) {
   }, []);
 
   // แก้ไขส่วน toggleGPTMode
-  const toggleGPTMode = () => {
-    setUseGPT(!useGPT);
-    // เคลียร์ popup เก่าก่อนแสดง popup ใหม่
-    setPopupVisible(false);
-    setTimeout(() => {
-      setPopupMessage(!useGPT ? 'เปลี่ยนเป็นโหมด AI แล้ว' : 'เปลี่ยนเป็นโหมดพื้นฐานแล้ว');
-      setPopupVisible(true);
-    }, 100);
+  const toggleGPTMode = async () => {
+    try {
+      setPopupVisible(false); // เคลียร์ popup เก่า
+      
+      // บันทึกค่าลง AsyncStorage
+      await AsyncStorage.setItem('useGPT', JSON.stringify(!useGPT));
+      
+      setUseGPT(!useGPT);
+      
+      // แสดง popup ใหม่
+      setTimeout(() => {
+        setPopupMessage(!useGPT ? 'เปลี่ยนเป็นโหมด AI แล้ว' : 'เปลี่ยนเป็นโหมดพื้นฐานแล้ว');
+        setPopupVisible(true);
+      }, 100);
+
+      // สั่นเพื่อให้ feedback
+      haptics.medium();
+      
+    } catch (error) {
+      console.error('Error toggling GPT mode:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเปลี่ยนโหมดได้ กรุณาลองใหม่');
+    }
   };
 
   // สร้าง styles ด้วย useMemo

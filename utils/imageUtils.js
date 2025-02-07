@@ -20,23 +20,39 @@ export const getBotIcon = () => {
 };
 
 export const BotIcon = ({ size = 24, color = '#000000', isAI = false }) => {
-  return (
-    <View style={styles.iconContainer}>
+  // Validate props
+  const validSize = typeof size === 'number' ? size : 24;
+  const validColor = typeof color === 'string' ? color : '#000000';
+  
+  try {
+    return (
+      <View style={styles.iconContainer}>
+        <MaterialIcons 
+          name={isAI ? "psychology" : "memory"}
+          size={validSize}
+          color={validColor}
+          style={styles.icon}
+        />
+        <View style={[
+          styles.statusDot, 
+          { 
+            borderColor: validColor,
+            backgroundColor: isAI ? '#6de67b' : '#888888'
+          }
+        ]} />
+      </View>
+    );
+  } catch (error) {
+    console.error('Error rendering BotIcon:', error);
+    // Fallback icon
+    return (
       <MaterialIcons 
-        name={isAI ? "psychology" : "memory"}
-        size={size}
-        color={color}
-        style={styles.icon}
+        name="android" 
+        size={validSize}
+        color={validColor}
       />
-      <View style={[
-        styles.statusDot, 
-        { 
-          borderColor: color,
-          backgroundColor: isAI ? '#6de67b' : '#888888'
-        }
-      ]} />
-    </View>
-  );
+    );
+  }
 };
 
 const styles = StyleSheet.create({
