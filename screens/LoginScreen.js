@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { auth } from '../firebase';
+import { auth, getAuthFunc } from '../firebase';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,6 +34,8 @@ export default function LoginScreen({ navigation }) {
     const checkLoginState = async () => {
       try {
         setIsLoading(true);
+        
+        // Auth is now directly available
         const currentUser = auth.currentUser;
         
         if (currentUser) {
@@ -50,15 +52,15 @@ export default function LoginScreen({ navigation }) {
             if (userCredential.user) {
               navigation.replace('Home');
             }
-          } catch (error) {
-            console.error('Auto login error:', error);
+          } catch {
+            // ลบข้อมูลที่บันทึกไว้เงียบๆ ถ้าไม่สามารถ login อัตโนมัติได้
             await AsyncStorage.removeItem('userEmail');
             await AsyncStorage.removeItem('userPassword');
           }
         }
       } catch (error) {
         console.error('Error checking login state:', error);
-        setError(error);
+        setError({ message: 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง' });
       } finally {
         setIsLoading(false);
       }
@@ -67,17 +69,31 @@ export default function LoginScreen({ navigation }) {
     checkLoginState();
   }, []);
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setErrorMessage('กรุณากรอกอีเมลและรหัสผ่าน');
-      return;
-    }
+  // เพิ่มฟังก์ชันตรวจสอบรูปแบบอีเมล
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
+  const handleLogin = async () => {
     try {
+      // ตรวจสอบข้อมูลก่อนส่งไป Firebase
+      if (!email.trim() || !password.trim()) {
+        setErrorMessage('กรุณากรอกอีเมลและรหัสผ่าน');
+        return;
+      }
+
+      // ตรวจสอบรูปแบบอีเมลก่อนส่งไป Firebase
+      if (!isValidEmail(email.trim())) {
+        setErrorMessage('รูปแบบอีเมลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       haptics.light();
 
+      // Use auth directly
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       
       await AsyncStorage.setItem('userEmail', email.trim());
@@ -92,26 +108,36 @@ export default function LoginScreen({ navigation }) {
       navigation.replace('Home');
     } catch (error) {
       haptics.error();
-      console.error('Login error:', error);
       
+      // จัดการ error แบบเงียบๆ ไม่ใช้ console.error
       let message = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
-      switch (error.code) {
-        case 'auth/invalid-email':
-          message = 'อีเมลไม่ถูกต้อง';
-          break;
-        case 'auth/user-disabled':
-          message = 'บัญชีผู้ใช้ถูกระงับ';
-          break;
-        case 'auth/user-not-found':
-          message = 'ไม่พบบัญชีผู้ใช้นี้';
-          break;
-        case 'auth/wrong-password':
-          message = 'รหัสผ่านไม่ถูกต้อง';
-          break;
+      
+      // ตรวจสอบ error code และแสดงข้อความที่เหมาะสม
+      if (error?.code) {
+        switch (error.code) {
+          case 'auth/invalid-email':
+            message = 'รูปแบบอีเมลไม่ถูกต้อง';
+            break;
+          case 'auth/user-disabled':
+            message = 'บัญชีผู้ใช้ถูกระงับ';
+            break;
+          case 'auth/user-not-found':
+            message = 'ไม่พบบัญชีผู้ใช้นี้';
+            break;
+          case 'auth/wrong-password':
+            message = 'รหัสผ่านไม่ถูกต้อง';
+            break;
+          case 'auth/too-many-requests':
+            message = 'คุณลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่';
+            break;
+          case 'auth/network-request-failed':
+            message = 'ไม่สามารถเชื่อมต่อเครือข่ายได้ กรุณาตรวจสอบการเชื่อมต่อ';
+            break;
+        }
       }
       
       setErrorMessage(message);
-      setError(error);
+      setError({ message }); // ส่งเฉพาะข้อความ error ไม่ส่ง stack trace
     } finally {
       setIsLoading(false);
     }
@@ -230,6 +256,10 @@ export default function LoginScreen({ navigation }) {
     socialButton: {
       borderColor: '#6de67b',
     },
+    inputError: {
+      borderWidth: 1,
+      borderColor: '#FF3B30',
+    },
   });
 
   return (
@@ -249,17 +279,24 @@ export default function LoginScreen({ navigation }) {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>อีเมล</Text>
               <TextInput
-                style={styles.input}
-                placeholder="กรอกอีเมล"
-                placeholderTextColor={isDarkMode ? '#999999' : '#666666'}
+                style={[
+                  styles.input,
+                  errorMessage.includes('อีเมล') && styles.inputError
+                ]}
+                placeholder="อีเมล"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                textContentType="emailAddress"
                 value={email}
                 onChangeText={(text) => {
                   setEmail(text);
                   setErrorMessage('');
                 }}
-                keyboardType="email-address"
-                autoCapitalize="none"
               />
+              {errorMessage.includes('อีเมล') && (
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              )}
             </View>
 
             <View style={styles.passwordContainer}>

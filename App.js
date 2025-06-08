@@ -12,6 +12,7 @@ import UserPreferencesScreen from './screens/UserPreferencesScreen';
 import { cleanup } from './firebase';
 import { Easing } from 'react-native';
 import { initSounds, cleanupSounds } from './utils/soundUtils';
+import NetworkStatus from './components/NetworkStatus';
 
 const Stack = createStackNavigator();
 
@@ -79,6 +80,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <NavigationContainer>
+        <NetworkStatus />
         <AppNavigator />
       </NavigationContainer>
     </ThemeProvider>

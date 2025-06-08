@@ -1,25 +1,12 @@
-import { initializeApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getDatabase, ref, onValue, off } from 'firebase/database';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { app, auth, db, database, dbRef } from './firebaseSimplified';
+import { ref, onValue, off } from 'firebase/database';
 import NetInfo from '@react-native-community/netinfo';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAmGOuyVNeEXUlSU3QC-SObo6gEoXdopFE",
-  authDomain: "aicook-1042e.firebaseapp.com",
-  databaseURL: "https://aicook-1042e-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "aicook-1042e",
-  storageBucket: "aicook-1042e.firebasestorage.app",
-  messagingSenderId: "35093052995",
-  appId: "1:35093052995:web:38d0262ccf063a87b95ef6",
-  measurementId: "G-PQW9GYK0V5"
+// Helper function for getting auth (now it's directly available)
+const getAuthFunc = () => {
+  return auth;
 };
 
-let app;
-let db;
-let auth;
-let database;
 let netInfoUnsubscribe;
 let connectedRef;
 
@@ -33,16 +20,6 @@ const cleanup = () => {
 };
 
 try {
-  // Initialize Firebase
-  app = initializeApp(firebaseConfig);
-  
-  // Initialize services
-  db = getFirestore(app);
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-  });
-  database = getDatabase(app);
-
   // Add connection state listener
   connectedRef = ref(database, '.info/connected');
   onValue(connectedRef, (snap) => {
@@ -72,16 +49,6 @@ try {
   cleanup();
 }
 
-// สร้าง references สำหรับ Realtime Database
-const dbRef = {
-  users: 'users',
-  chats: 'chats',
-  recipes: 'recipes',
-  ingredients: 'ingredients',
-  userPreferences: 'userPreferences',
-  faqs: 'faqs'
-};
-
 // ตัวอย่างโครงสร้างข้อมูล
 const recipeSchema = {
   id: 'string',
@@ -106,5 +73,5 @@ const userPreferencesSchema = {
   updatedAt: 'timestamp'
 };
 
-export { db, auth, database, dbRef, cleanup };
+export { db, auth, database, dbRef, cleanup, getAuthFunc };
 export default app; 

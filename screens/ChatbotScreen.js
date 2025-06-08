@@ -41,6 +41,7 @@ import { SlideInRight, SlideInLeft, FadeIn, FadeOut, withSpring, runOnJS } from 
 import * as Notifications from 'expo-notifications';
 import { getBotIcon } from '../utils/imageUtils';
 import { BotIcon } from '../utils/imageUtils';
+import NetInfo from '@react-native-community/netinfo';
 
 // ตั้งค่า notifications ที่ส่วนบนของไฟล์
 Notifications.setNotificationHandler({
@@ -862,6 +863,27 @@ export default function ChatbotScreen({ navigation, route }) {
       marginLeft: 4,
       justifyContent: 'center',
     },
+    connectionError: {
+      position: 'absolute',
+      bottom: Platform.OS === 'ios' ? 90 : 70,
+      left: 16,
+      right: 16,
+      padding: 8,
+      borderRadius: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      elevation: 5,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
+    connectionErrorText: {
+      fontSize: 12,
+      fontWeight: '600',
+    }
   }), [isDarkMode]);
 
   // โหลดข้อมูลแชทเมื่อเปิดหน้าจอ
@@ -1077,9 +1099,24 @@ export default function ChatbotScreen({ navigation, route }) {
     }
   };
 
-  // แก้ไขฟังก์ชัน handleSend เพื่อรองรับการสร้างตัวจับเวลา
+  // เพิ่ม state สำหรับแจ้งเตือนการเชื่อมต่อ
+  const [showConnectionError, setShowConnectionError] = useState(false);
+
+  // แก้ไขส่วน handleSend
   const handleSend = async () => {
     try {
+      const isConnected = await NetInfo.fetch();
+      if (!isConnected.isConnected) {
+        // แสดงแถบแจ้งเตือนการเชื่อมต่อด้านล่าง
+        setShowConnectionError(true);
+        haptics.error();
+        // ซ่อนแถบแจ้งเตือนหลัง 3 วินาที
+        setTimeout(() => {
+          setShowConnectionError(false);
+        }, 3000);
+        return;
+      }
+      
       // ปิดตัวจับเวลาที่กำลังทำงานอยู่เมื่อส่งข้อความใหม่
       if (activeTimerId) {
         await stopTimer(activeTimerId);
@@ -1724,7 +1761,7 @@ export default function ChatbotScreen({ navigation, route }) {
       const newPinnedStatus = !messageToPin.isPinned;
 
       if (chatId) {
-        // อัพเดต Firestore
+        // อัพเดท Firestore
         const messageRef = doc(db, 'chats', messageId);
           await updateDoc(messageRef, {
           isPinned: newPinnedStatus,
@@ -1732,7 +1769,7 @@ export default function ChatbotScreen({ navigation, route }) {
         });
       }
 
-      // อัพเดต local state
+      // อัพเดท local state
       setMessages(prev =>
         prev.map(msg =>
               msg.id === messageId 
@@ -2031,11 +2068,7 @@ export default function ChatbotScreen({ navigation, route }) {
   }, []);
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? -10 : 0}
-    >
+    <KeyboardAvoidingView style={styles.container}>
       <CustomPopup
         visible={popupVisible}
         message={popupMessage}
@@ -2255,6 +2288,29 @@ export default function ChatbotScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
         </View>
+      )}
+      
+      {showConnectionError && (
+        <Animated.View 
+          style={[
+            styles.connectionError,
+            {
+              backgroundColor: isDarkMode ? '#333' : '#FFF',
+            }
+          ]}
+        >
+          <MaterialIcons 
+            name="wifi-off"
+            size={16}
+            color="#FF4444"
+          />
+          <Text style={[
+            styles.connectionErrorText,
+            { color: isDarkMode ? '#FFF' : '#333' }
+          ]}>
+            ไม่มีการเชื่อมต่ออินเทอร์เน็ต
+          </Text>
+        </Animated.View>
       )}
     </KeyboardAvoidingView>
   );

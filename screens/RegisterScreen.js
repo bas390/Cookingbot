@@ -16,6 +16,8 @@ import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { collection, addDoc } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
+import { haptics } from '../utils/haptics';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function RegisterScreen({ navigation }) {
   const { isDarkMode } = useTheme();
@@ -26,6 +28,7 @@ export default function RegisterScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [error, setError] = useState(null);
 
   const styles = StyleSheet.create({
     container: {
@@ -107,65 +110,84 @@ export default function RegisterScreen({ navigation }) {
     },
   });
 
+  // เพิ่มฟังก์ชันตรวจสอบรูปแบบอีเมล
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleRegister = async () => {
-    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
-      setErrorMessage('กรุณากรอกข้อมูลให้ครบ');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMessage('รหัสผ่านไม่ตรงกัน');
-      return;
-    }
-
-    if (password.length < 6) {
-      setErrorMessage('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
-      return;
-    }
-
-    setIsLoading(true);
     try {
-      // สร้างบัญชีใน Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
+      // ตรวจสอบข้อมูลก่อนส่งไป Firebase
+      if (!email.trim() || !password.trim()) {
+        setErrorMessage('กรุณากรอกอีเมลและรหัสผ่าน');
+        return;
+      }
 
-      // เพิ่มข้อมูลผู้ใช้ใน Firestore
-      const usersRef = collection(db, 'users');
-      await addDoc(usersRef, {
-        uid: user.uid,
+      // ตรวจสอบรูปแบบอีเมล
+      if (!isValidEmail(email.trim())) {
+        setErrorMessage('รูปแบบอีเมลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
+        return;
+      }
+
+      // ตรวจสอบความยาวรหัสผ่าน
+      if (password.length < 6) {
+        setErrorMessage('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+        return;
+      }
+
+      // ตรวจสอบรหัสผ่านยืนยัน
+      if (password !== confirmPassword) {
+        setErrorMessage('รหัสผ่านไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง');
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      haptics.light();
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      
+      // สร้าง user profile
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
         email: email.trim(),
-        createdAt: new Date().getTime(),
-        settings: {
-          theme: 'light',
-          notifications: true
+        createdAt: new Date().toISOString(),
+        preferences: {
+          skillLevel: 'beginner',
+          allergies: [],
+          restrictions: []
         }
       });
 
-      Alert.alert(
-        'สำเร็จ',
-        'สมัครสมาชิกเรียบร้อยแล้ว',
-        [{ text: 'ตกลง', onPress: () => navigation.navigate('Login') }]
-      );
+      haptics.success();
+      navigation.replace('Home');
     } catch (error) {
-      console.error('Error registering:', error);
-      let message = 'ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง';
+      haptics.error();
       
-      switch (error.code) {
-        case 'auth/email-already-in-use':
-          message = 'อีเมลนี้ถูกใช้งานแล้ว';
-          break;
-        case 'auth/invalid-email':
-          message = 'รูปแบบอีเมลไม่ถูกต้อง';
-          break;
-        case 'auth/operation-not-allowed':
-          message = 'ไม่สามารถสมัครสมาชิกได้ในขณะนี้';
-          break;
-        case 'auth/weak-password':
-          message = 'รหัสผ่านไม่ปลอดภัยเพียงพอ';
-          break;
+      let message = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
+      
+      if (error?.code) {
+        switch (error.code) {
+          case 'auth/invalid-email':
+            message = 'รูปแบบอีเมลไม่ถูกต้อง';
+            break;
+          case 'auth/email-already-in-use':
+            message = 'อีเมลนี้ถูกใช้งานแล้ว';
+            break;
+          case 'auth/weak-password':
+            message = 'รหัสผ่านไม่ปลอดภัย กรุณาใช้รหัสผ่านที่ซับซ้อนกว่านี้';
+            break;
+          case 'auth/network-request-failed':
+            message = 'ไม่สามารถเชื่อมต่อเครือข่ายได้ กรุณาตรวจสอบการเชื่อมต่อ';
+            break;
+          case 'auth/too-many-requests':
+            message = 'คุณลองสมัครสมาชิกหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่';
+            break;
+        }
       }
       
       setErrorMessage(message);
+      setError({ message }); // ส่งเฉพาะข้อความ error
     } finally {
       setIsLoading(false);
     }

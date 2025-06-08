@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,17 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-const CustomPopup = ({ visible, message, onClose }) => {
+const CustomPopup = ({ visible = false, message = '', onClose }) => {
   const { isDarkMode } = useTheme();
-  const translateY = new Animated.Value(-100);
+  const translateY = React.useRef(new Animated.Value(-100)).current;
 
-  // Validate props
-  if (typeof visible !== 'boolean') {
-    console.warn('CustomPopup: visible prop should be boolean');
-    return null;
-  }
-  
-  if (!message) {
-    console.warn('CustomPopup: message is required');
-    return null;
-  }
+  const hidePopup = useCallback(() => {
+    Animated.timing(translateY, {
+      toValue: -100,
+      duration: 300,
+      useNativeDriver: true
+    }).start(() => onClose?.());
+  }, [translateY, onClose]);
 
   useEffect(() => {
     if (visible) {
@@ -33,24 +30,17 @@ const CustomPopup = ({ visible, message, onClose }) => {
         friction: 10
       }).start();
 
-      // ปิด popup อัตโนมัติหลัง 2 วินาที
-      const timer = setTimeout(() => {
-        hidePopup();
-      }, 2000);
-
+      const timer = setTimeout(hidePopup, 2000);
       return () => clearTimeout(timer);
     }
-  }, [visible]);
-
-  const hidePopup = () => {
-    Animated.timing(translateY, {
-      toValue: -100,
-      duration: 300,
-      useNativeDriver: true
-    }).start(() => onClose());
-  };
+  }, [visible, hidePopup]);
 
   if (!visible) return null;
+
+  if (!message) {
+    console.warn('CustomPopup: message is required when visible is true');
+    return null;
+  }
 
   return (
     <Animated.View 
@@ -99,4 +89,4 @@ const styles = StyleSheet.create({
   }
 });
 
-export default CustomPopup; 
+export default React.memo(CustomPopup); 

@@ -28,6 +28,7 @@ import { haptics } from '../utils/haptics';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import CustomPopup from '../components/CustomPopup';
+import Tutorial from '../components/Tutorial';
 
 const ChatItem = React.memo(({ chat, onPress, onDelete, onEdit }) => {
   return (
@@ -57,6 +58,7 @@ export default function HomeScreen({ navigation }) {
   const [deletingChatId, setDeletingChatId] = useState(null);
   const [popupMessage, setPopupMessage] = useState('');
   const [popupVisible, setPopupVisible] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -141,6 +143,21 @@ export default function HomeScreen({ navigation }) {
       subscription.remove();
     };
   }, []);
+
+  useEffect(() => {
+    checkTutorial();
+  }, []);
+
+  const checkTutorial = async () => {
+    try {
+      const shown = await AsyncStorage.getItem('tutorialShown');
+      if (!shown) {
+        setShowTutorial(true);
+      }
+    } catch (error) {
+      console.error('Error checking tutorial:', error);
+    }
+  };
 
   // ฟังก์ชันเพิ่มแชทใหม่
   const handleAddChat = async () => {
@@ -738,11 +755,6 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <CustomPopup
-        visible={popupVisible}
-        message={popupMessage}
-        onClose={() => setPopupVisible(false)}
-      />
       <Animated.View style={{ opacity: fadeAnim }}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -805,25 +817,6 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-
-        {!isOnline && (
-          <Animated.View 
-            style={[
-              styles.offlineBar,
-              {
-                transform: [{
-                  translateY: slideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-50, 0]
-                  })
-                }]
-              }
-            ]}
-          >
-            <MaterialIcons name="cloud-off" size={16} color="#FFFFFF" />
-            <Text style={styles.offlineText}>ไม่มีการเชื่อมต่ออินเทอร์เน็ต</Text>
-          </Animated.View>
-        )}
 
         {chats.length === 0 ? (
           <View style={styles.emptyState}>
@@ -992,6 +985,11 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      <Tutorial 
+        visible={showTutorial}
+        onClose={() => setShowTutorial(false)}
+      />
     </View>
   );
 }
